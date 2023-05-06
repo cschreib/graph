@@ -2,7 +2,7 @@
 
 Proof of concept for implementing a graph database using [EnTT](https://github.com/skypjack/entt) for storage. The motivation was to have a simple and lightweight implementation, meant for smallish databases.
 
-The public API is in [`include/graph/graph.hpp`](include/graph/graph.hpp).
+The public API is in [`include/graph/graph.hpp`](include/graph/graph.hpp). Functions that can reasonably be expected to fail for certain inputs have a return type of `expected<T>`, which gives a simple string as  `.error()` on failure. If the return type is not `expected<T>`, then the function is expected to always succeed (baring exceptional circumstances, like running out of resources, in which case exceptions may be thrown).
 
 This implementation includes the following:
  - The graph is made of nodes and relationships.
