@@ -8,9 +8,11 @@ This implementation includes the following:
  - All nodes and relationships have a type, which determines what properties they have.
  - The type of a relationship mandates the type of the source and target nodes.
  - The list of available types is determined by a user-supplied schema, which must be loaded up front.
+ - A node can have multiple relationships with other nodes (including relationships with itself).
+ - A node can have more than one relationship of the same type with the same node (presumably with different properties, but not necessarily).
  - The data is stored in RAM.
  - Functions are available to load a schema, list of nodes, and list of relationships from JSON data.
- - Functions are available to dump all the above to JSON, for backup and persistant storage.
+ - Functions are available to dump all the above to JSON, for backup and persistent storage.
  - Functions are available to query:
    - The type of a node
    - The properties of a node
@@ -40,10 +42,15 @@ Functions that can reasonably be expected to fail for certain inputs have a retu
 Nodes and relationships are encoded as entities, and their properties are encoded as components (each property separately, to allow for efficient storage and queries by property). The type of a node or relationship is encoded both in the `node_base`/`relationship_base` component (for fast identification), and as a tag (for fast iteration). The ID of a node or relationship is thus an `entt::entity` value (64 bit integer). In JSON, the IDs are stored as strings, and the functions `id_to_string()`/`id_from_string()` are available to do the conversion.
 
 For best data locality and fast access, the schema is encoded in binary format in a compact data structure. This means there are some compile-time restrictions on:
- - max number of unique node types (32)
- - max number of unique relationship types (32)
- - max number of property per node/relationship (16)
- - max length of a node/relationship type string (32)
+ - the max number of unique node types (32)
+ - the max number of unique relationship types (32)
+ - the max number of property per node/relationship (16)
+ - the max length of a node/relationship type string (32)
+
+Note however that this applies only to the schema. The database itself does not have similar restriction, in particular the following is only limited by the available RAM:
+ - the number of nodes
+ - the number of relationships
+ - the number of relationships for a given node
 
 These default values can be changed in [`src/graph.cpp`](src/graph.cpp).
 
