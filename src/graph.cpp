@@ -3,13 +3,20 @@
 #include "graph/graph_string.hpp"
 #include "graph/graph_vector.hpp"
 
+#include <algorithm>
+
 using namespace entt::literals;
 using namespace std::literals;
 
 namespace {
+constexpr std::size_t max_properties       = 16;
+constexpr std::size_t max_schema_nodes     = 32;
+constexpr std::size_t max_schema_links     = 32;
+constexpr std::size_t max_string_id_length = 32;
+
 struct hashed_string {
-    entt::id_type           hash{};
-    graph::small_string<32> str{};
+    entt::id_type                             hash{};
+    graph::small_string<max_string_id_length> str{};
 };
 
 struct node_type {
@@ -26,20 +33,20 @@ struct schema_property {
 };
 
 struct schema_node {
-    hashed_string                            type{};
-    graph::small_vector<schema_property, 16> properties{};
+    hashed_string                                        type{};
+    graph::small_vector<schema_property, max_properties> properties{};
 };
 
 struct schema_link {
-    hashed_string                            type{};
-    hashed_string                            source{};
-    hashed_string                            target{};
-    graph::small_vector<schema_property, 16> properties{};
+    hashed_string                                        type{};
+    hashed_string                                        source{};
+    hashed_string                                        target{};
+    graph::small_vector<schema_property, max_properties> properties{};
 };
 
 struct schema {
-    graph::small_vector<schema_node, 32> nodes{};
-    graph::small_vector<schema_link, 32> links{};
+    graph::small_vector<schema_node, max_schema_nodes> nodes{};
+    graph::small_vector<schema_link, max_schema_links> links{};
 };
 
 entt::id_type hash(std::string_view s) noexcept {
@@ -74,7 +81,15 @@ auto& load_schema_item(Storage& r, std::string_view name, const nlohmann::json& 
 
 template<typename Storage>
 auto& load_schema_link(Storage& r, std::string_view name, const nlohmann::json& data) {
-    auto& l  = load_schema_item(r, name, data);
+    if (!data.contains("source"sv)) {
+        throw std::runtime_error("missing 'source' element");
+    }
+    if (!data.contains("target"sv)) {
+        throw std::runtime_error("missing 'target' element");
+    }
+
+    auto& l = load_schema_item(r, name, data);
+
     l.source = add_hash(data["source"sv].get<std::string>());
     l.target = add_hash(data["target"sv].get<std::string>());
 
@@ -129,31 +144,79 @@ const schema_property* get_property_schema(const Item& n, entt::id_type name) no
     return &*iter;
 }
 
-bool check_property_schema(const schema_property& s, const nlohmann::json& p) noexcept {
+std::expected<void, std::string_view>
+check_property_schema(const schema_property& s, const nlohmann::json& p) noexcept {
     switch (s.type.hash) {
     case "string"_hs: {
         if (!p.is_string()) {
-            return false;
+            return std::unexpected("expected string value"sv);
         }
+        break;
     }
     case "integer"_hs: {
         if (!p.is_number_integer()) {
-            return false;
+            return std::unexpected("expected integer value"sv);
         }
+        break;
     }
     case "float"_hs: {
         if (!p.is_number_float()) {
-            return false;
+            return std::unexpected("expected float value"sv);
         }
+        break;
     }
     case "bool"_hs: {
         if (!p.is_boolean()) {
-            return false;
+            return std::unexpected("expected boolean value"sv);
         }
+        break;
     }
     }
 
-    return true;
+    return {};
+}
+
+std::expected<entt::id_type, std::string_view>
+check_node_schema(const entt::registry& r, const nlohmann::json& node) noexcept {
+    if (!node.contains("type"sv)) {
+        return std::unexpected("missing node type");
+    }
+
+    const auto type = hash(node["type"sv].get<std::string>());
+
+    const auto* node_schema = get_node_schema(r, type);
+    if (node_schema == nullptr) {
+        return std::unexpected("unknown node type"sv);
+    }
+
+    graph::small_vector<bool, max_properties> found;
+    found.resize(node_schema->properties.size());
+
+    if (node.contains("properties"sv)) {
+        for (const auto& [k, v] : node["properties"sv].items()) {
+            const auto* property_schema = get_property_schema(*node_schema, hash(k));
+            if (property_schema == nullptr) {
+                return std::unexpected("unknown property"sv);
+            }
+
+            const std::size_t property_id = property_schema - node_schema->properties.data();
+            if (found[property_id]) {
+                return std::unexpected("duplicate property");
+            }
+
+            found[property_id] = true;
+
+            if (auto s = check_property_schema(*property_schema, v); !s) {
+                return std::unexpected(s.error());
+            }
+        }
+    }
+
+    if (!std::all_of(found.begin(), found.end(), [](bool b) { return b; })) {
+        return std::unexpected("missing property");
+    }
+
+    return type;
 }
 
 template<typename Item>
@@ -183,9 +246,9 @@ nlohmann::json save_schema_link(const schema_link& l) {
 
 namespace graph {
 void load_schema(entt::registry& r, const nlohmann::json& data) {
-    auto& s = r.ctx().emplace<schema>();
+    schema s;
 
-    {
+    if (data.contains("nodes"sv)) {
         for (const auto& [k, v] : data["nodes"sv].items()) {
             load_schema_item(s.nodes, k, v);
         }
@@ -193,13 +256,16 @@ void load_schema(entt::registry& r, const nlohmann::json& data) {
         std::sort(s.nodes.begin(), s.nodes.end(), type_less{});
     }
 
-    {
+    if (data.contains("links"sv)) {
         for (const auto& [k, v] : data["links"sv].items()) {
             load_schema_link(s.links, k, v);
         }
 
         std::sort(s.links.begin(), s.links.end(), type_less{});
     }
+
+    r.ctx().erase<schema>();
+    r.ctx().emplace<schema>(std::move(s));
 }
 
 nlohmann::json save_schema(const entt::registry& r) {
@@ -228,27 +294,12 @@ nlohmann::json save_schema(const entt::registry& r) {
     return data;
 }
 
-bool add_node(entt::registry& r, const nlohmann::json& node) {
+std::expected<entt::entity, std::string_view>
+add_node(entt::registry& r, const nlohmann::json& node) {
     // Validate against schema.
-    const auto  type        = hash(node["type"sv].get<std::string>());
-    const auto* node_schema = get_node_schema(r, type);
-    if (node_schema == nullptr) {
-        return false;
-    }
-
-    for (const auto& [k, v] : node.items()) {
-        if (k == "type"sv) {
-            continue;
-        }
-
-        const auto* property_schema = get_property_schema(*node_schema, hash(k));
-        if (property_schema == nullptr) {
-            return false;
-        }
-
-        if (!check_property_schema(*property_schema, v)) {
-            return false;
-        }
+    auto type = check_node_schema(r, node);
+    if (!type) {
+        return std::unexpected(type.error());
     }
 
     // From now on, parsing success is guaranteed, we can commit the data.
@@ -257,13 +308,9 @@ bool add_node(entt::registry& r, const nlohmann::json& node) {
     entt::entity e = entt::null;
     try {
         e = r.create();
-        r.emplace<node_type>(e, node_type{.type = type});
+        r.emplace<node_type>(e, node_type{.type = type.value()});
 
-        for (const auto& [k, v] : node.items()) {
-            if (k == "type"sv) {
-                continue;
-            }
-
+        for (const auto& [k, v] : node["properties"].items()) {
             // TODO: Add new node
             // switch (v.type()) {
             // }
@@ -277,6 +324,6 @@ bool add_node(entt::registry& r, const nlohmann::json& node) {
         throw;
     }
 
-    return true;
+    return e;
 }
 } // namespace graph
