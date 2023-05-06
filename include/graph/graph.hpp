@@ -9,7 +9,6 @@ namespace graph {
 using json     = nlohmann::json;
 using registry = entt::registry;
 using entity   = entt::entity;
-
 template<typename T>
 using expected = std::expected<T, std::string_view>;
 

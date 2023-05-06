@@ -9,10 +9,10 @@ FetchContent_Declare(entt
                      GIT_TAG        v3.11.1)
 FetchContent_MakeAvailable(entt)
 
-FetchContent_Declare(crow
-                     GIT_REPOSITORY https://github.com/CrowCpp/Crow.git
-                     GIT_TAG        v1.0+5)
-FetchContent_MakeAvailable(crow)
+# FetchContent_Declare(crow
+#                      GIT_REPOSITORY https://github.com/CrowCpp/Crow.git
+#                      GIT_TAG        v1.0+5)
+# FetchContent_MakeAvailable(crow)
 
 FetchContent_Declare(json
                      GIT_REPOSITORY https://github.com/nlohmann/json.git
@@ -39,7 +39,7 @@ target_include_directories(graph PUBLIC
     $<INSTALL_INTERFACE:${CMAKE_INSTALL_PREFIX}/include>)
 
 target_link_libraries(graph PUBLIC EnTT::EnTT)
-target_link_libraries(graph PUBLIC Crow::Crow)
+# target_link_libraries(graph PUBLIC Crow::Crow)
 target_link_libraries(graph PUBLIC nlohmann_json::nlohmann_json)
 
 if (GRAPH_DO_TEST)
