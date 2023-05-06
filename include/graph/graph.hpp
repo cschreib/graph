@@ -6,7 +6,7 @@
 #include <string_view>
 
 namespace graph {
-graph::small_string<32>                       id_to_string(entt::entity e) noexcept;
+small_string<32>                              id_to_string(entt::entity e) noexcept;
 std::expected<entt::entity, std::string_view> id_from_string(std::string_view s) noexcept;
 
 std::expected<void, std::string_view> load_schema(entt::registry& r, const nlohmann::json& schema);

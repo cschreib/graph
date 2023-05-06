@@ -610,9 +610,9 @@ get_properties(const entt::registry& r, entt::entity item, const Schema& schema)
 } // namespace
 
 namespace graph {
-graph::small_string<32> id_to_string(entt::entity e) noexcept {
-    graph::small_string<32> buffer;
-    auto                    res = std::to_chars(
+small_string<32> id_to_string(entt::entity e) noexcept {
+    small_string<32> buffer;
+    auto             res = std::to_chars(
         buffer.data(), buffer.data() + buffer.capacity(), static_cast<std::uint64_t>(e));
     buffer.resize(res.ptr - buffer.data());
     return buffer;
