@@ -75,12 +75,14 @@ void to_json(nlohmann::json& j, const string_property& s) {
 
 using property_type = std::variant<bool, std::int64_t, double, string_property>;
 
-struct node_type {
+struct node_base {
     hash_t type{};
 };
 
-struct relationship_type {
-    hash_t type{};
+struct relationship_base {
+    hash_t       type{};
+    entt::entity source = entt::null;
+    entt::entity target = entt::null;
 };
 
 struct schema_property {
@@ -286,34 +288,21 @@ check_property_schema(const schema_property& schema, const nlohmann::json& p) no
     return {};
 }
 
-struct validated_node {
-    hash_t             type;
-    const schema_node& schema;
-};
-
-std::expected<validated_node, std::string_view>
-check_node_schema(const entt::registry& r, const nlohmann::json& node) noexcept {
-    if (!node.contains("type"sv)) {
-        return std::unexpected("missing node type");
-    }
-
-    const auto  type        = hash(node["type"sv].get<std::string>());
-    const auto* node_schema = try_get_node_schema(r, type);
-    if (node_schema == nullptr) {
-        return std::unexpected("unknown node type"sv);
-    }
-
+template<typename Schema>
+std::expected<void, std::string_view> check_item_property_schema(
+    const entt::registry& r, const Schema& schema, const nlohmann::json& item) noexcept {
     graph::small_vector<bool, max_properties> found;
-    found.resize(node_schema->properties.size());
+    found.resize(schema.properties.size());
 
-    if (node.contains("properties"sv)) {
-        for (const auto& [k, v] : node["properties"sv].items()) {
-            const auto* property_schema = try_get_property_schema(*node_schema, hash(type, k));
+    if (item.contains("properties"sv)) {
+        for (const auto& [k, v] : item["properties"sv].items()) {
+            const auto* property_schema =
+                try_get_property_schema(schema, hash(schema.type.hash, k));
             if (property_schema == nullptr) {
                 return std::unexpected("unknown property"sv);
             }
 
-            const std::size_t property_id = property_schema - node_schema->properties.data();
+            const std::size_t property_id = property_schema - schema.properties.data();
             if (found[property_id]) {
                 return std::unexpected("duplicate property");
             }
@@ -330,7 +319,62 @@ check_node_schema(const entt::registry& r, const nlohmann::json& node) noexcept 
         return std::unexpected("missing property");
     }
 
-    return validated_node{.type = type, .schema = *node_schema};
+    return {};
+}
+
+struct validated_node {
+    hash_t             type;
+    const schema_node& schema;
+};
+
+std::expected<validated_node, std::string_view>
+check_node_schema(const entt::registry& r, const nlohmann::json& node) noexcept {
+    if (!node.contains("type"sv)) {
+        return std::unexpected("missing node type");
+    }
+
+    const auto* schema = try_get_node_schema(r, hash(node["type"sv].get<std::string>()));
+    if (schema == nullptr) {
+        return std::unexpected("unknown node type"sv);
+    }
+
+    if (auto s = check_item_property_schema(r, *schema, node); !s) {
+        return std::unexpected(s.error());
+    }
+
+    return validated_node{.type = schema->type.hash, .schema = *schema};
+}
+
+struct validated_relationship {
+    hash_t                     type;
+    const schema_relationship& schema;
+};
+
+std::expected<validated_relationship, std::string_view>
+check_relationship_schema(const entt::registry& r, const nlohmann::json& relationship) noexcept {
+    if (!relationship.contains("type"sv)) {
+        return std::unexpected("missing relationship type");
+    }
+
+    if (!relationship.contains("source"sv)) {
+        return std::unexpected("missing relationship source");
+    }
+
+    if (!relationship.contains("target"sv)) {
+        return std::unexpected("missing relationship target");
+    }
+
+    const auto* schema =
+        try_get_relationship_schema(r, hash(relationship["type"sv].get<std::string>()));
+    if (schema == nullptr) {
+        return std::unexpected("unknown relationship type"sv);
+    }
+
+    if (auto s = check_item_property_schema(r, *schema, relationship); !s) {
+        return std::unexpected(s.error());
+    }
+
+    return validated_relationship{.type = schema->type.hash, .schema = *schema};
 }
 
 template<typename Item>
@@ -487,12 +531,61 @@ add_node(entt::registry& r, const nlohmann::json& node) {
     entt::entity e = entt::null;
     try {
         e = r.create();
-        r.emplace<node_type>(e, node_type{.type = validated.type});
+        r.emplace<node_base>(e, node_base{.type = validated.type});
 
-        for (const auto& [k, v] : node["properties"].items()) {
-            const auto  name_hash       = hash(validated.type, k);
-            const auto& property_schema = get_property_schema(validated.schema, name_hash);
-            add_property(r, e, property_schema, v);
+        if (node.contains("properties"sv)) {
+            for (const auto& [k, v] : node["properties"sv].items()) {
+                const auto  name_hash       = hash(validated.type, k);
+                const auto& property_schema = get_property_schema(validated.schema, name_hash);
+                add_property(r, e, property_schema, v);
+            }
+        }
+    } catch (...) {
+        if (e != entt::null) {
+            r.destroy(e);
+        }
+        throw;
+    }
+
+    return e;
+}
+
+std::expected<entt::entity, std::string_view>
+add_relationship(entt::registry& r, const nlohmann::json& relationship) {
+    // Validate against schema.
+    const auto validated_chk = check_relationship_schema(r, relationship);
+    if (!validated_chk) {
+        return std::unexpected(validated_chk.error());
+    }
+
+    const auto& validated = validated_chk.value();
+
+    const auto source = static_cast<entt::entity>(relationship["source"sv].get<entt::id_type>());
+    if (!r.valid(source)) {
+        return std::unexpected("source does not exist"sv);
+    }
+
+    const auto target = static_cast<entt::entity>(relationship["target"sv].get<entt::id_type>());
+    if (!r.valid(target)) {
+        return std::unexpected("target does not exist"sv);
+    }
+
+    // From now on, parsing success is guaranteed, we can commit the data.
+    // Exceptions may still be thrown when out-of-memory, or entity cap reached.
+    // So wrap all in try/catch target cancel on failure. These should be rare.
+    entt::entity e = entt::null;
+    try {
+        e = r.create();
+
+        r.emplace<relationship_base>(
+            e, relationship_base{.type = validated.type, .source = source, .target = target});
+
+        if (relationship.contains("properties"sv)) {
+            for (const auto& [k, v] : relationship["properties"sv].items()) {
+                const auto  name_hash       = hash(validated.type, k);
+                const auto& property_schema = get_property_schema(validated.schema, name_hash);
+                add_property(r, e, property_schema, v);
+            }
         }
     } catch (...) {
         if (e != entt::null) {
@@ -510,7 +603,7 @@ get_node_property(const entt::registry& r, entt::entity node, std::string_view p
         return std::unexpected("node does not exist"sv);
     }
 
-    const auto  type        = r.get<node_type>(node).type;
+    const auto  type        = r.get<node_base>(node).type;
     const auto& node_schema = get_node_schema(r, type);
 
     const auto  property_hash   = hash(type, property);
@@ -526,4 +619,5 @@ get_node_property(const entt::registry& r, entt::entity node, std::string_view p
 
     return std::visit([](const auto& pv) { return nlohmann::json(pv); }, p.value());
 }
+
 } // namespace graph

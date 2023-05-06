@@ -14,6 +14,9 @@ nlohmann::json save_schema(const entt::registry& r);
 std::expected<entt::entity, std::string_view>
 add_node(entt::registry& r, const nlohmann::json& node);
 
+std::expected<entt::entity, std::string_view>
+add_relationship(entt::registry& r, const nlohmann::json& relationship);
+
 std::expected<nlohmann::json, std::string_view>
 get_node_property(const entt::registry& r, entt::entity node, std::string_view property);
 } // namespace graph
