@@ -40,3 +40,8 @@ target_include_directories(graph PUBLIC
 target_link_libraries(graph PUBLIC EnTT::EnTT)
 target_link_libraries(graph PUBLIC Crow::Crow)
 target_link_libraries(graph PUBLIC nlohmann_json::nlohmann_json)
+
+if (GRAPH_DO_TEST)
+    enable_testing()
+    add_subdirectory(tests)
+endif()

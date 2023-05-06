@@ -32,8 +32,8 @@ struct schema_node {
 
 struct schema_link {
     hashed_string                            type{};
-    hashed_string                            from{};
-    hashed_string                            to{};
+    hashed_string                            source{};
+    hashed_string                            target{};
     graph::small_vector<schema_property, 16> properties{};
 };
 
@@ -59,12 +59,14 @@ schema_property& load_schema_property(Item& r, std::string_view name, const nloh
 template<typename Storage>
 auto& load_schema_item(Storage& r, std::string_view name, const nlohmann::json& data) {
     typename Storage::value_type item{.type = add_hash(name)};
-    for (const auto& [k, v] : data.items()) {
-        if (std::string_view(k).starts_with("__")) {
-            continue;
-        }
+    if (data.contains("properties"sv)) {
+        for (const auto& [k, v] : data["properties"sv].items()) {
+            if (std::string_view(k).starts_with("__")) {
+                continue;
+            }
 
-        load_schema_property(item, k, v);
+            load_schema_property(item, k, v);
+        }
     }
 
     return r.push_back(item);
@@ -72,9 +74,9 @@ auto& load_schema_item(Storage& r, std::string_view name, const nlohmann::json& 
 
 template<typename Storage>
 auto& load_schema_link(Storage& r, std::string_view name, const nlohmann::json& data) {
-    auto& l = load_schema_item(r, name, data);
-    l.from  = add_hash(data["__from"sv].get<std::string>());
-    l.to    = add_hash(data["__to"sv].get<std::string>());
+    auto& l  = load_schema_item(r, name, data);
+    l.source = add_hash(data["source"sv].get<std::string>());
+    l.target = add_hash(data["target"sv].get<std::string>());
 
     return l;
 }
@@ -156,17 +158,24 @@ bool check_property_schema(const schema_property& s, const nlohmann::json& p) no
 
 template<typename Item>
 nlohmann::json save_schema_item(const Item& n) {
-    nlohmann::json data;
-    for (const auto& p : n.properties) {
-        data[p.name.str.str()] = p.type.str.str();
+    nlohmann::json data(nlohmann::json::value_t::object);
+
+    if (!n.properties.empty()) {
+        nlohmann::json properties(nlohmann::json::value_t::object);
+        for (const auto& p : n.properties) {
+            properties[p.name.str.str()] = p.type.str.str();
+        }
+
+        data["properties"sv] = std::move(properties);
     }
+
     return data;
 }
 
 nlohmann::json save_schema_link(const schema_link& l) {
     nlohmann::json data = save_schema_item(l);
-    data["__from"sv]    = l.from.str.str();
-    data["__to"sv]      = l.to.str.str();
+    data["source"sv]    = l.source.str.str();
+    data["target"sv]    = l.target.str.str();
 
     return data;
 }
@@ -196,10 +205,10 @@ void load_schema(entt::registry& r, const nlohmann::json& data) {
 nlohmann::json save_schema(const entt::registry& r) {
     const auto& s = r.ctx().get<schema>();
 
-    nlohmann::json data;
+    nlohmann::json data(nlohmann::json::value_t::object);
 
     {
-        nlohmann::json nodes;
+        nlohmann::json nodes(nlohmann::json::value_t::object);
         for (const auto& n : s.nodes) {
             nodes[n.type.str.str()] = save_schema_item(n);
         }
@@ -208,7 +217,7 @@ nlohmann::json save_schema(const entt::registry& r) {
     }
 
     {
-        nlohmann::json links;
+        nlohmann::json links(nlohmann::json::value_t::object);
         for (const auto& l : s.links) {
             links[l.type.str.str()] = save_schema_link(l);
         }
@@ -244,7 +253,7 @@ bool add_node(entt::registry& r, const nlohmann::json& node) {
 
     // From now on, parsing success is guaranteed, we can commit the data.
     // Exceptions may still be thrown when out-of-memory, or entity cap reached.
-    // So wrap all in try/catch to cancel on failure. These should be rare.
+    // So wrap all in try/catch target cancel on failure. These should be rare.
     entt::entity e = entt::null;
     try {
         e = r.create();
