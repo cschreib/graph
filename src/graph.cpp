@@ -16,7 +16,10 @@ constexpr std::size_t max_schema_relationships            = 32;
 constexpr std::size_t max_string_id_length                = 32;
 constexpr std::size_t max_in_place_string_property_length = 128;
 
+using graph::entity;
+using graph::expected;
 using graph::json;
+using graph::registry;
 
 using hash_data_t = std::uint64_t;
 enum class hash_t : hash_data_t {};
@@ -87,9 +90,9 @@ struct node_base {
 };
 
 struct relationship_base {
-    hash_t       type{};
-    entt::entity source = entt::null;
-    entt::entity target = entt::null;
+    hash_t type{};
+    entity source = entt::null;
+    entity target = entt::null;
 };
 
 struct schema_property {
@@ -164,9 +167,8 @@ auto& load_schema_item(Storage& r, std::string_view name, const json& data) {
 }
 
 template<typename Storage>
-std::expected<std::reference_wrapper<typename Storage::value_type>, std::string_view>
+expected<std::reference_wrapper<typename Storage::value_type>>
 load_schema_relationship(Storage& r, std::string_view name, const json& data) {
-
     if (!data.contains("source"sv)) {
         return std::unexpected("missing source"sv);
     }
@@ -196,7 +198,7 @@ struct type_less {
     }
 };
 
-const schema_node* try_get_node_schema(const entt::registry& r, hash_t type) noexcept {
+const schema_node* try_get_node_schema(const registry& r, hash_t type) noexcept {
     const auto& schema = r.ctx().get<schema_graph>();
     auto iter = std::lower_bound(schema.nodes.begin(), schema.nodes.end(), type, type_less{});
     if (iter == schema.nodes.end() || iter->type.hash != type) {
@@ -206,7 +208,7 @@ const schema_node* try_get_node_schema(const entt::registry& r, hash_t type) noe
     return &*iter;
 }
 
-const schema_node& get_node_schema(const entt::registry& r, hash_t type) noexcept {
+const schema_node& get_node_schema(const registry& r, hash_t type) noexcept {
     const auto* schema = try_get_node_schema(r, type);
     if (schema == nullptr) {
         graph::terminate_with("unknown node type"sv);
@@ -215,8 +217,8 @@ const schema_node& get_node_schema(const entt::registry& r, hash_t type) noexcep
     return *schema;
 }
 
-std::expected<std::reference_wrapper<const schema_node>, std::string_view>
-get_node_schema(const entt::registry& r, entt::entity node) {
+expected<std::reference_wrapper<const schema_node>>
+get_node_schema(const registry& r, entity node) {
     if (!r.valid(node)) {
         return std::unexpected("node does not exist"sv);
     }
@@ -230,8 +232,7 @@ get_node_schema(const entt::registry& r, entt::entity node) {
     return get_node_schema(r, type);
 }
 
-const schema_relationship*
-try_get_relationship_schema(const entt::registry& r, hash_t type) noexcept {
+const schema_relationship* try_get_relationship_schema(const registry& r, hash_t type) noexcept {
     const auto& schema = r.ctx().get<schema_graph>();
     auto        iter   = std::lower_bound(
         schema.relationships.begin(), schema.relationships.end(), type, type_less{});
@@ -242,7 +243,7 @@ try_get_relationship_schema(const entt::registry& r, hash_t type) noexcept {
     return &*iter;
 }
 
-const schema_relationship& get_relationship_schema(const entt::registry& r, hash_t type) noexcept {
+const schema_relationship& get_relationship_schema(const registry& r, hash_t type) noexcept {
     const auto* schema = try_get_relationship_schema(r, type);
     if (schema == nullptr) {
         graph::terminate_with("unknown relationship type"sv);
@@ -251,8 +252,8 @@ const schema_relationship& get_relationship_schema(const entt::registry& r, hash
     return *schema;
 }
 
-std::expected<std::reference_wrapper<const relationship_base>, std::string_view>
-get_relationship_props(const entt::registry& r, entt::entity relationship) {
+expected<std::reference_wrapper<const relationship_base>>
+get_relationship_props(const registry& r, entity relationship) {
     if (!r.valid(relationship)) {
         return std::unexpected("relationship does not exist"sv);
     }
@@ -265,8 +266,8 @@ get_relationship_props(const entt::registry& r, entt::entity relationship) {
     return *relationship_props;
 }
 
-std::expected<std::reference_wrapper<const schema_relationship>, std::string_view>
-get_relationship_schema(const entt::registry& r, entt::entity relationship) {
+expected<std::reference_wrapper<const schema_relationship>>
+get_relationship_schema(const registry& r, entity relationship) {
     const auto relationship_props = get_relationship_props(r, relationship);
     if (!relationship_props) {
         return std::unexpected(relationship_props.error());
@@ -299,8 +300,7 @@ const schema_property& get_property_schema(const Item& n, hash_t name) noexcept 
     return *schema;
 }
 
-std::expected<void, std::string_view>
-check_property_schema(const schema_property& schema, const json& p) noexcept {
+expected<void> check_property_schema(const schema_property& schema, const json& p) noexcept {
     switch (schema.type.hash) {
     case "string"_h64: {
         if (!p.is_string()) {
@@ -333,8 +333,8 @@ check_property_schema(const schema_property& schema, const json& p) noexcept {
 }
 
 template<typename Schema>
-std::expected<void, std::string_view> check_item_property_schema(
-    const entt::registry& r, const Schema& schema, const json& item) noexcept {
+expected<void>
+check_item_property_schema(const registry& r, const Schema& schema, const json& item) noexcept {
     graph::small_vector<bool, max_properties> found;
     found.resize(schema.properties.size());
 
@@ -371,8 +371,7 @@ struct validated_node {
     const schema_node& schema;
 };
 
-std::expected<validated_node, std::string_view>
-check_node_schema(const entt::registry& r, const json& node) noexcept {
+expected<validated_node> check_node_schema(const registry& r, const json& node) noexcept {
     if (!node.contains("type"sv)) {
         return std::unexpected("missing node type"sv);
     }
@@ -391,13 +390,13 @@ check_node_schema(const entt::registry& r, const json& node) noexcept {
 
 struct validated_relationship {
     hash_t                     type{};
-    entt::entity               source{};
-    entt::entity               target{};
+    entity                     source{};
+    entity                     target{};
     const schema_relationship& schema;
 };
 
-std::expected<validated_relationship, std::string_view>
-check_relationship_schema(const entt::registry& r, const json& relationship) noexcept {
+expected<validated_relationship>
+check_relationship_schema(const registry& r, const json& relationship) noexcept {
     if (!relationship.contains("type"sv)) {
         return std::unexpected("missing relationship type"sv);
     }
@@ -464,9 +463,7 @@ check_relationship_schema(const entt::registry& r, const json& relationship) noe
 }
 
 template<typename Validated>
-void add_properties(
-    entt::registry& r, entt::entity e, const Validated& validated, const json& data) {
-
+void add_properties(registry& r, entity e, const Validated& validated, const json& data) {
     if (!data.contains("properties"sv)) {
         return;
     }
@@ -502,7 +499,7 @@ json save_schema_relationship(const schema_relationship& l) {
     return data;
 }
 
-void add_tag(entt::registry& r, entt::entity e, hash_t tag) {
+void add_tag(registry& r, entity e, hash_t tag) {
     static_assert(sizeof(entt::id_type) == sizeof(hash_data_t));
     auto& s = r.storage<std::monostate>(static_cast<entt::id_type>(tag));
     s.emplace(e);
@@ -523,15 +520,13 @@ auto view_relationships(Registry& r, hash_t type) {
 }
 
 template<typename StorageType>
-void add_property(entt::registry& r, entt::entity e, hash_t name_hash, const StorageType& value) {
+void add_property(registry& r, entity e, hash_t name_hash, const StorageType& value) {
     static_assert(sizeof(entt::id_type) == sizeof(hash_data_t));
     auto& s = r.storage<StorageType>(static_cast<entt::id_type>(name_hash));
     s.emplace(e, value);
 }
 
-void add_property(
-    entt::registry& r, entt::entity e, const schema_property& schema, const json& value) {
-
+void add_property(registry& r, entity e, const schema_property& schema, const json& value) {
     switch (schema.type.hash) {
     case "string"_h64: {
         add_property(r, e, schema.name.hash, string_property(value.get<std::string>()));
@@ -554,13 +549,13 @@ void add_property(
 }
 
 template<typename StorageType>
-property_type get_property(const entt::registry& r, entt::entity e, hash_t name_hash) {
+property_type get_property(const registry& r, entity e, hash_t name_hash) {
     static_assert(sizeof(entt::id_type) == sizeof(hash_data_t));
     const auto& s = r.storage<StorageType>(static_cast<entt::id_type>(name_hash));
     return s.get(e);
 }
 
-property_type get_property(const entt::registry& r, entt::entity e, const schema_property& schema) {
+property_type get_property(const registry& r, entity e, const schema_property& schema) {
     switch (schema.type.hash) {
     case "string"_h64: {
         return get_property<string_property>(r, e, schema.name.hash);
@@ -583,9 +578,8 @@ property_type get_property(const entt::registry& r, entt::entity e, const schema
 }
 
 template<typename Schema>
-std::expected<json, std::string_view> get_property(
-    const entt::registry& r, entt::entity item, const Schema& schema, std::string_view property) {
-
+expected<json>
+get_property(const registry& r, entity item, const Schema& schema, std::string_view property) {
     const auto  property_hash   = hash(schema.type.hash, property);
     const auto* property_schema = try_get_property_schema(schema, property_hash);
     if (!property_schema) {
@@ -597,8 +591,7 @@ std::expected<json, std::string_view> get_property(
 }
 
 template<typename Schema>
-std::expected<json, std::string_view>
-get_properties(const entt::registry& r, entt::entity item, const Schema& schema) {
+expected<json> get_properties(const registry& r, entity item, const Schema& schema) {
     json data(json::value_t::object);
 
     for (const auto& property_schema : schema.properties) {
@@ -611,7 +604,7 @@ get_properties(const entt::registry& r, entt::entity item, const Schema& schema)
 } // namespace
 
 namespace graph {
-small_string<32> id_to_string(entt::entity e) noexcept {
+small_string<32> id_to_string(entity e) noexcept {
     small_string<32> buffer;
     auto             res = std::to_chars(
         buffer.data(), buffer.data() + buffer.capacity(), static_cast<std::uint64_t>(e));
@@ -619,8 +612,8 @@ small_string<32> id_to_string(entt::entity e) noexcept {
     return buffer;
 }
 
-std::expected<entt::entity, std::string_view> id_from_string(std::string_view s) noexcept {
-    static_assert(sizeof(entt::entity) == sizeof(std::uint64_t));
+expected<entity> id_from_string(std::string_view s) noexcept {
+    static_assert(sizeof(entity) == sizeof(std::uint64_t));
 
     std::uint64_t i   = 0u;
     auto          res = std::from_chars(s.begin(), s.end(), i);
@@ -628,10 +621,10 @@ std::expected<entt::entity, std::string_view> id_from_string(std::string_view s)
         return std::unexpected("ID is not a valid number");
     }
 
-    return static_cast<entt::entity>(i);
+    return static_cast<entity>(i);
 }
 
-std::expected<void, std::string_view> load_schema(entt::registry& r, const json& data) {
+expected<void> load_schema(registry& r, const json& data) {
     if (r.alive() > 0) {
         return std::unexpected(
             "cannot load a new schema in a registry that already contains entities"sv);
@@ -664,7 +657,7 @@ std::expected<void, std::string_view> load_schema(entt::registry& r, const json&
     return {};
 }
 
-json dump_schema(const entt::registry& r) {
+json dump_schema(const registry& r) {
     const auto& schema = r.ctx().get<schema_graph>();
 
     json data(json::value_t::object);
@@ -690,7 +683,7 @@ json dump_schema(const entt::registry& r) {
     return data;
 }
 
-std::expected<void, std::string_view> load_nodes(entt::registry& r, const json& nodes) {
+expected<void> load_nodes(registry& r, const json& nodes) {
     if (nodes.type() != json::value_t::object) {
         return std::unexpected("nodes must be an object");
     }
@@ -710,7 +703,7 @@ std::expected<void, std::string_view> load_nodes(entt::registry& r, const json& 
     return {};
 }
 
-json dump_nodes(const entt::registry& r) {
+json dump_nodes(const registry& r) {
     const auto& graph_schema = r.ctx().get<schema_graph>();
 
     json data(json::value_t::object);
@@ -730,8 +723,7 @@ json dump_nodes(const entt::registry& r) {
     return data;
 }
 
-std::expected<void, std::string_view>
-load_relationships(entt::registry& r, const json& relationships) {
+expected<void> load_relationships(registry& r, const json& relationships) {
     if (relationships.type() != json::value_t::object) {
         return std::unexpected("relationships must be an object");
     }
@@ -751,7 +743,7 @@ load_relationships(entt::registry& r, const json& relationships) {
     return {};
 }
 
-json dump_relationships(const entt::registry& r) {
+json dump_relationships(const registry& r) {
     const auto& graph_schema = r.ctx().get<schema_graph>();
 
     json data(json::value_t::object);
@@ -775,7 +767,7 @@ json dump_relationships(const entt::registry& r) {
     return data;
 }
 
-std::expected<void, std::string_view> load(entt::registry& r, const json& data) {
+expected<void> load(registry& r, const json& data) {
     if (!data.contains("schema"sv)) {
         return std::unexpected("missing schema"sv);
     }
@@ -804,7 +796,7 @@ std::expected<void, std::string_view> load(entt::registry& r, const json& data) 
     return {};
 }
 
-json dump(const entt::registry& r) {
+json dump(const registry& r) {
     json data(json::value_t::object);
     data["schema"sv]        = dump_schema(r);
     data["nodes"sv]         = dump_nodes(r);
@@ -812,7 +804,7 @@ json dump(const entt::registry& r) {
     return data;
 }
 
-std::expected<entt::entity, std::string_view> add_node(entt::registry& r, const json& node) {
+expected<entity> add_node(registry& r, const json& node) {
     // Validate against schema.
     const auto validated_chk = check_node_schema(r, node);
     if (!validated_chk) {
@@ -824,24 +816,20 @@ std::expected<entt::entity, std::string_view> add_node(entt::registry& r, const 
     // From now on, parsing success is guaranteed, we can commit the data.
     // Exceptions may still be thrown when out-of-memory, or entity cap reached.
     // So wrap all in try/catch to cancel on failure. These should be rare.
-    entt::entity e = entt::null;
+    entity e = r.create();
     try {
-        e = r.create();
         r.emplace<node_base>(e, node_base{.type = validated.type});
         add_tag(r, e, validated.type);
         add_properties(r, e, validated, node);
     } catch (...) {
-        if (e != entt::null) {
-            r.destroy(e);
-        }
+        r.destroy(e);
         throw;
     }
 
     return e;
 }
 
-std::expected<entt::entity, std::string_view>
-add_node(entt::registry& r, entt::entity e, const json& node) {
+expected<entity> add_node(registry& r, entity e, const json& node) {
     // Validate against schema.
     const auto validated_chk = check_node_schema(r, node);
     if (!validated_chk) {
@@ -853,28 +841,25 @@ add_node(entt::registry& r, entt::entity e, const json& node) {
     // From now on, parsing success is guaranteed, we can commit the data.
     // Exceptions may still be thrown when out-of-memory, or entity cap reached.
     // So wrap all in try/catch to cancel on failure. These should be rare.
-    try {
-        auto enew = r.create(e);
-        if (enew != e) {
-            r.destroy(enew);
-            return std::unexpected("node ID already in use");
-        }
+    auto enew = r.create(e);
+    if (enew != e) {
+        r.destroy(enew);
+        return std::unexpected("node ID already in use");
+    }
 
+    try {
         r.emplace<node_base>(e, node_base{.type = validated.type});
         add_tag(r, e, validated.type);
         add_properties(r, e, validated, node);
     } catch (...) {
-        if (e != entt::null) {
-            r.destroy(e);
-        }
+        r.destroy(e);
         throw;
     }
 
     return e;
 }
 
-std::expected<entt::entity, std::string_view>
-add_relationship(entt::registry& r, const json& relationship) {
+expected<entity> add_relationship(registry& r, const json& relationship) {
     // Validate against schema.
     const auto validated_chk = check_relationship_schema(r, relationship);
     if (!validated_chk) {
@@ -886,26 +871,22 @@ add_relationship(entt::registry& r, const json& relationship) {
     // From now on, parsing success is guaranteed, we can commit the data.
     // Exceptions may still be thrown when out-of-memory, or entity cap reached.
     // So wrap all in try/catch to cancel on failure. These should be rare.
-    entt::entity e = entt::null;
+    entity e = r.create();
     try {
-        e = r.create();
         r.emplace<relationship_base>(
             e, relationship_base{
                    .type = validated.type, .source = validated.source, .target = validated.target});
         add_tag(r, e, validated.type);
         add_properties(r, e, validated, relationship);
     } catch (...) {
-        if (e != entt::null) {
-            r.destroy(e);
-        }
+        r.destroy(e);
         throw;
     }
 
     return e;
 }
 
-std::expected<entt::entity, std::string_view>
-add_relationship(entt::registry& r, entt::entity e, const json& relationship) {
+expected<entity> add_relationship(registry& r, entity e, const json& relationship) {
     // Validate against schema.
     const auto validated_chk = check_relationship_schema(r, relationship);
     if (!validated_chk) {
@@ -917,30 +898,27 @@ add_relationship(entt::registry& r, entt::entity e, const json& relationship) {
     // From now on, parsing success is guaranteed, we can commit the data.
     // Exceptions may still be thrown when out-of-memory, or entity cap reached.
     // So wrap all in try/catch to cancel on failure. These should be rare.
-    try {
-        auto enew = r.create(e);
-        if (enew != e) {
-            r.destroy(enew);
-            return std::unexpected("relationship ID already in use");
-        }
+    auto enew = r.create(e);
+    if (enew != e) {
+        r.destroy(enew);
+        return std::unexpected("relationship ID already in use");
+    }
 
+    try {
         r.emplace<relationship_base>(
             e, relationship_base{
                    .type = validated.type, .source = validated.source, .target = validated.target});
         add_tag(r, e, validated.type);
         add_properties(r, e, validated, relationship);
     } catch (...) {
-        if (e != entt::null) {
-            r.destroy(e);
-        }
+        r.destroy(e);
         throw;
     }
 
     return e;
 }
 
-std::expected<std::string_view, std::string_view>
-get_node_type(const entt::registry& r, entt::entity node) {
+expected<std::string_view> get_node_type(const registry& r, entity node) {
     const auto node_schema_chk = get_node_schema(r, node);
     if (!node_schema_chk) {
         return std::unexpected(node_schema_chk.error());
@@ -949,8 +927,7 @@ get_node_type(const entt::registry& r, entt::entity node) {
     return node_schema_chk.value().get().type.str();
 }
 
-std::expected<std::string_view, std::string_view>
-get_relationship_type(const entt::registry& r, entt::entity relationship) {
+expected<std::string_view> get_relationship_type(const registry& r, entity relationship) {
     const auto relationship_schema_chk = get_relationship_schema(r, relationship);
     if (!relationship_schema_chk) {
         return std::unexpected(relationship_schema_chk.error());
@@ -959,8 +936,7 @@ get_relationship_type(const entt::registry& r, entt::entity relationship) {
     return relationship_schema_chk.value().get().type.str();
 }
 
-std::expected<entt::entity, std::string_view>
-get_relationship_target(const entt::registry& r, entt::entity relationship) {
+expected<entity> get_relationship_target(const registry& r, entity relationship) {
     const auto relationship_props_chk = get_relationship_props(r, relationship);
     if (!relationship_props_chk) {
         return std::unexpected(relationship_props_chk.error());
@@ -969,8 +945,7 @@ get_relationship_target(const entt::registry& r, entt::entity relationship) {
     return relationship_props_chk.value().get().target;
 }
 
-std::expected<entt::entity, std::string_view>
-get_relationship_source(const entt::registry& r, entt::entity relationship) {
+expected<entity> get_relationship_source(const registry& r, entity relationship) {
     const auto relationship_props_chk = get_relationship_props(r, relationship);
     if (!relationship_props_chk) {
         return std::unexpected(relationship_props_chk.error());
@@ -979,8 +954,7 @@ get_relationship_source(const entt::registry& r, entt::entity relationship) {
     return relationship_props_chk.value().get().source;
 }
 
-std::expected<json, std::string_view>
-get_node_property(const entt::registry& r, entt::entity node, std::string_view property) {
+expected<json> get_node_property(const registry& r, entity node, std::string_view property) {
     const auto node_schema_chk = get_node_schema(r, node);
     if (!node_schema_chk) {
         return std::unexpected(node_schema_chk.error());
@@ -989,8 +963,8 @@ get_node_property(const entt::registry& r, entt::entity node, std::string_view p
     return get_property(r, node, node_schema_chk.value().get(), property);
 }
 
-std::expected<json, std::string_view> get_relationship_property(
-    const entt::registry& r, entt::entity relationship, std::string_view property) {
+expected<json>
+get_relationship_property(const registry& r, entity relationship, std::string_view property) {
     const auto relationship_schema_chk = get_relationship_schema(r, relationship);
     if (!relationship_schema_chk) {
         return std::unexpected(relationship_schema_chk.error());
@@ -999,8 +973,7 @@ std::expected<json, std::string_view> get_relationship_property(
     return get_property(r, relationship, relationship_schema_chk.value().get(), property);
 }
 
-std::expected<json, std::string_view>
-get_node_properties(const entt::registry& r, entt::entity node) {
+expected<json> get_node_properties(const registry& r, entity node) {
     const auto node_schema_chk = get_node_schema(r, node);
     if (!node_schema_chk) {
         return std::unexpected(node_schema_chk.error());
@@ -1009,8 +982,7 @@ get_node_properties(const entt::registry& r, entt::entity node) {
     return get_properties(r, node, node_schema_chk.value().get());
 }
 
-std::expected<json, std::string_view>
-get_relationship_properties(const entt::registry& r, entt::entity relationship) {
+expected<json> get_relationship_properties(const registry& r, entity relationship) {
     const auto relationship_schema_chk = get_relationship_schema(r, relationship);
     if (!relationship_schema_chk) {
         return std::unexpected(relationship_schema_chk.error());
@@ -1019,8 +991,7 @@ get_relationship_properties(const entt::registry& r, entt::entity relationship) 
     return get_properties(r, relationship, relationship_schema_chk.value().get());
 }
 
-std::expected<json, std::string_view>
-get_node_relationships(const entt::registry& r, entt::entity node) {
+expected<json> get_node_relationships(const registry& r, entity node) {
     const auto node_schema_chk = get_node_schema(r, node);
     if (!node_schema_chk) {
         return std::unexpected(node_schema_chk.error());
@@ -1049,8 +1020,7 @@ get_node_relationships(const entt::registry& r, entt::entity node) {
     return data;
 }
 
-std::expected<json, std::string_view>
-get_node_relationships(const entt::registry& r, entt::entity node, std::string_view type) {
+expected<json> get_node_relationships(const registry& r, entity node, std::string_view type) {
     const auto node_schema_chk = get_node_schema(r, node);
     if (!node_schema_chk) {
         return std::unexpected(node_schema_chk.error());

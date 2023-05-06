@@ -6,62 +6,54 @@
 #include <string_view>
 
 namespace graph {
-using json = nlohmann::json;
+using json     = nlohmann::json;
+using registry = entt::registry;
+using entity   = entt::entity;
 
-small_string<32>                              id_to_string(entt::entity e) noexcept;
-std::expected<entt::entity, std::string_view> id_from_string(std::string_view s) noexcept;
+template<typename T>
+using expected = std::expected<T, std::string_view>;
 
-std::expected<void, std::string_view> load_schema(entt::registry& r, const json& schema);
-json                                  dump_schema(const entt::registry& r);
+small_string<32> id_to_string(entity e) noexcept;
+expected<entity> id_from_string(std::string_view s) noexcept;
 
-std::expected<void, std::string_view> load_nodes(entt::registry& r, const json& nodes);
-json                                  dump_nodes(const entt::registry& r);
+expected<void> load_schema(registry& r, const json& schema);
+json           dump_schema(const registry& r);
 
-std::expected<void, std::string_view>
-     load_relationships(entt::registry& r, const json& relationships);
-json dump_relationships(const entt::registry& r);
+expected<void> load_nodes(registry& r, const json& nodes);
+json           dump_nodes(const registry& r);
 
-std::expected<void, std::string_view> load(entt::registry& r, const json& data);
-json                                  dump(const entt::registry& r);
+expected<void> load_relationships(registry& r, const json& relationships);
+json           dump_relationships(const registry& r);
 
-std::expected<entt::entity, std::string_view> add_node(entt::registry& r, const json& node);
+expected<void> load(registry& r, const json& data);
+json           dump(const registry& r);
 
-std::expected<entt::entity, std::string_view>
-add_node(entt::registry& r, entt::entity e, const json& node);
+expected<entity> add_node(registry& r, const json& node);
 
-std::expected<entt::entity, std::string_view>
-add_relationship(entt::registry& r, const json& relationship);
+expected<entity> add_node(registry& r, entity e, const json& node);
 
-std::expected<entt::entity, std::string_view>
-add_relationship(entt::registry& r, entt::entity e, const json& relationship);
+expected<entity> add_relationship(registry& r, const json& relationship);
 
-std::expected<std::string_view, std::string_view>
-get_node_type(const entt::registry& r, entt::entity node);
+expected<entity> add_relationship(registry& r, entity e, const json& relationship);
 
-std::expected<std::string_view, std::string_view>
-get_relationship_type(const entt::registry& r, entt::entity relationship);
+expected<std::string_view> get_node_type(const registry& r, entity node);
 
-std::expected<entt::entity, std::string_view>
-get_relationship_target(const entt::registry& r, entt::entity relationship);
+expected<std::string_view> get_relationship_type(const registry& r, entity relationship);
 
-std::expected<entt::entity, std::string_view>
-get_relationship_source(const entt::registry& r, entt::entity relationship);
+expected<entity> get_relationship_target(const registry& r, entity relationship);
 
-std::expected<json, std::string_view>
-get_node_property(const entt::registry& r, entt::entity node, std::string_view property);
+expected<entity> get_relationship_source(const registry& r, entity relationship);
 
-std::expected<json, std::string_view> get_relationship_property(
-    const entt::registry& r, entt::entity relationship, std::string_view property);
+expected<json> get_node_property(const registry& r, entity node, std::string_view property);
 
-std::expected<json, std::string_view>
-get_node_properties(const entt::registry& r, entt::entity node);
+expected<json>
+get_relationship_property(const registry& r, entity relationship, std::string_view property);
 
-std::expected<json, std::string_view>
-get_relationship_properties(const entt::registry& r, entt::entity node);
+expected<json> get_node_properties(const registry& r, entity node);
 
-std::expected<json, std::string_view>
-get_node_relationships(const entt::registry& r, entt::entity node);
+expected<json> get_relationship_properties(const registry& r, entity node);
 
-std::expected<json, std::string_view>
-get_node_relationships(const entt::registry& r, entt::entity node, std::string_view type);
+expected<json> get_node_relationships(const registry& r, entity node);
+
+expected<json> get_node_relationships(const registry& r, entity node, std::string_view type);
 } // namespace graph
