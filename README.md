@@ -2,6 +2,8 @@
 
 Proof of concept for implementing a graph database using [EnTT](https://github.com/skypjack/entt) for storage. The motivation was to have a simple and lightweight implementation, meant for smallish databases.
 
+The public API is in [`include/graph/graph.hpp`](include/graph/graph.hpp).
+
 This implementation includes the following:
  - The graph is made of nodes and relationships.
  - It is a property graph: both nodes and relationships can have properties.
@@ -18,10 +20,15 @@ This implementation includes the following:
    - The source and target of a relationship
    - The properties of a relationship
    - The relationships of a node (all of them, or just the relationships of a given type)
+   - The list of all nodes of a given type
+   - The list of all relationships of a given type
  - Functions are available to add:
    - A new node
    - A new relationship
+ - Functions are available to delete:
+   - A node (deletes all connected relationships)
+   - A relationship
  - No function is currently available to edit nodes and relationships (only through delete and add). There is nothing fundamental preventing this, just lack of time.
  - There was a plan to implement a REST API on top of this using [Crow](https://github.com/CrowCpp/Crow), but this was not started.
+ - There was also a plan to implement a generic query, similar to Cypher, but this is a huge job. Initially I wanted to build something different, that would be simpler (only one-liners) yet making certain basic queries more natural than Cypher (in particular, having a one-liner for "give me nodes of type X that do NOT have a relationship Y with another node").
 
-The public API is in [`include/graph/graph.hpp`](include/graph/graph.hpp).
