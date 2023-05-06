@@ -346,7 +346,9 @@ check_node_schema(const entt::registry& r, const nlohmann::json& node) noexcept 
 }
 
 struct validated_relationship {
-    hash_t                     type;
+    hash_t                     type{};
+    entt::entity               source{};
+    entt::entity               target{};
     const schema_relationship& schema;
 };
 
@@ -370,11 +372,40 @@ check_relationship_schema(const entt::registry& r, const nlohmann::json& relatio
         return std::unexpected("unknown relationship type"sv);
     }
 
+    const auto source = static_cast<entt::entity>(relationship["source"sv].get<entt::id_type>());
+    if (!r.valid(source)) {
+        return std::unexpected("source does not exist"sv);
+    }
+
+    const auto* source_props = r.try_get<node_base>(source);
+    if (source_props == nullptr) {
+        return std::unexpected("source is not a node"sv);
+    }
+
+    if (source_props->type != schema->source.hash) {
+        return std::unexpected("source has incorrect type");
+    }
+
+    const auto target = static_cast<entt::entity>(relationship["target"sv].get<entt::id_type>());
+    if (!r.valid(target)) {
+        return std::unexpected("target does not exist"sv);
+    }
+
+    const auto* target_props = r.try_get<node_base>(target);
+    if (target_props == nullptr) {
+        return std::unexpected("target is not a node"sv);
+    }
+
+    if (target_props->type != schema->target.hash) {
+        return std::unexpected("target has incorrect type");
+    }
+
     if (auto s = check_item_property_schema(r, *schema, relationship); !s) {
         return std::unexpected(s.error());
     }
 
-    return validated_relationship{.type = schema->type.hash, .schema = *schema};
+    return validated_relationship{
+        .type = schema->type.hash, .source = source, .target = target, .schema = *schema};
 }
 
 template<typename Item>
@@ -560,16 +591,6 @@ add_relationship(entt::registry& r, const nlohmann::json& relationship) {
 
     const auto& validated = validated_chk.value();
 
-    const auto source = static_cast<entt::entity>(relationship["source"sv].get<entt::id_type>());
-    if (!r.valid(source)) {
-        return std::unexpected("source does not exist"sv);
-    }
-
-    const auto target = static_cast<entt::entity>(relationship["target"sv].get<entt::id_type>());
-    if (!r.valid(target)) {
-        return std::unexpected("target does not exist"sv);
-    }
-
     // From now on, parsing success is guaranteed, we can commit the data.
     // Exceptions may still be thrown when out-of-memory, or entity cap reached.
     // So wrap all in try/catch target cancel on failure. These should be rare.
@@ -578,7 +599,8 @@ add_relationship(entt::registry& r, const nlohmann::json& relationship) {
         e = r.create();
 
         r.emplace<relationship_base>(
-            e, relationship_base{.type = validated.type, .source = source, .target = target});
+            e, relationship_base{
+                   .type = validated.type, .source = validated.source, .target = validated.target});
 
         if (relationship.contains("properties"sv)) {
             for (const auto& [k, v] : relationship["properties"sv].items()) {

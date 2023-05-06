@@ -312,17 +312,53 @@ TEST_CASE("add_relationship bad") {
         REQUIRE_INVALID(e2, "relationship already exists");
     }
 
+    SECTION("source does not exist") {
+        auto e = graph::add_relationship(
+            r,
+            R"({"type": "needs", "source": 100, "target": 0, "properties": {"priority": "MUST"}})"_json);
+        REQUIRE_INVALID(e, "source does not exist");
+    }
+
+    SECTION("source is not a node") {
+        auto e1 = graph::add_relationship(r, test_relationship_mitigates);
+        REQUIRE_VALID(e1);
+        REQUIRE(static_cast<std::uint64_t>(e1.value()) == 3);
+
+        auto e2 = graph::add_relationship(
+            r,
+            R"({"type": "needs", "source": 3, "target": 0, "properties": {"priority": "MUST"}})"_json);
+        REQUIRE_INVALID(e2, "source is not a node");
+    }
+
     SECTION("wrong source type") {
         auto e = graph::add_relationship(
             r,
             R"({"type": "needs", "source": 1, "target": 0, "properties": {"priority": "MUST"}})"_json);
-        REQUIRE_INVALID(e, "wrong source type");
+        REQUIRE_INVALID(e, "source has incorrect type");
+    }
+
+    SECTION("target does not exist") {
+        auto e = graph::add_relationship(
+            r,
+            R"({"type": "needs", "source": 2, "target": 100, "properties": {"priority": "MUST"}})"_json);
+        REQUIRE_INVALID(e, "target does not exist");
+    }
+
+    SECTION("target is not a node") {
+        auto e1 = graph::add_relationship(r, test_relationship_mitigates);
+        REQUIRE_VALID(e1);
+        REQUIRE(static_cast<std::uint64_t>(e1.value()) == 3);
+
+        auto e2 = graph::add_relationship(
+            r,
+            R"({"type": "needs", "source": 2, "target": 3, "properties": {"priority": "MUST"}})"_json);
+        REQUIRE_INVALID(e2, "target is not a node");
     }
 
     SECTION("wrong target type") {
         auto e = graph::add_relationship(
             r,
             R"({"type": "needs", "source": 2, "target": 1, "properties": {"priority": "MUST"}})"_json);
-        REQUIRE_INVALID(e, "wrong target type");
+        REQUIRE_INVALID(e, "target has incorrect type");
     }
 }
