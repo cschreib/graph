@@ -210,6 +210,21 @@ const schema_node& get_node_schema(const entt::registry& r, hash_t type) noexcep
     return *schema;
 }
 
+std::expected<std::reference_wrapper<const schema_node>, std::string_view>
+get_node_schema(const entt::registry& r, entt::entity node) {
+    if (!r.valid(node)) {
+        return std::unexpected("node does not exist"sv);
+    }
+
+    const auto* node_props = r.try_get<node_base>(node);
+    if (node_props == nullptr) {
+        return std::unexpected("not a node");
+    }
+
+    const auto type = node_props->type;
+    return get_node_schema(r, type);
+}
+
 const schema_relationship*
 try_get_relationship_schema(const entt::registry& r, hash_t type) noexcept {
     const auto& schema = r.ctx().get<schema_graph>();
@@ -229,6 +244,21 @@ const schema_relationship& get_relationship_schema(const entt::registry& r, hash
     }
 
     return *schema;
+}
+
+std::expected<std::reference_wrapper<const schema_relationship>, std::string_view>
+get_relationship_schema(const entt::registry& r, entt::entity relationship) {
+    if (!r.valid(relationship)) {
+        return std::unexpected("relationship does not exist"sv);
+    }
+
+    const auto* relationship_props = r.try_get<relationship_base>(relationship);
+    if (relationship_props == nullptr) {
+        return std::unexpected("not a relationship");
+    }
+
+    const auto type = relationship_props->type;
+    return get_relationship_schema(r, type);
 }
 
 template<typename Item>
@@ -638,35 +668,21 @@ add_relationship(entt::registry& r, const nlohmann::json& relationship) {
 
 std::expected<nlohmann::json, std::string_view>
 get_node_property(const entt::registry& r, entt::entity node, std::string_view property) {
-    if (!r.valid(node)) {
-        return std::unexpected("node does not exist"sv);
+    const auto node_schema_chk = get_node_schema(r, node);
+    if (!node_schema_chk) {
+        return std::unexpected(node_schema_chk.error());
     }
 
-    const auto* node_props = r.try_get<node_base>(node);
-    if (node_props == nullptr) {
-        return std::unexpected("not a node");
-    }
-
-    const auto  type        = node_props->type;
-    const auto& node_schema = get_node_schema(r, type);
-
-    return get_property(r, node, node_schema, property);
+    return get_property(r, node, node_schema_chk.value().get(), property);
 }
 
 std::expected<nlohmann::json, std::string_view> get_relationship_property(
     const entt::registry& r, entt::entity relationship, std::string_view property) {
-    if (!r.valid(relationship)) {
-        return std::unexpected("relationship does not exist"sv);
+    const auto relationship_schema_chk = get_relationship_schema(r, relationship);
+    if (!relationship_schema_chk) {
+        return std::unexpected(relationship_schema_chk.error());
     }
 
-    const auto* relationship_props = r.try_get<relationship_base>(relationship);
-    if (relationship_props == nullptr) {
-        return std::unexpected("not a relationship");
-    }
-
-    const auto  type                = relationship_props->type;
-    const auto& relationship_schema = get_relationship_schema(r, type);
-
-    return get_property(r, relationship, relationship_schema, property);
+    return get_property(r, relationship, relationship_schema_chk.value().get(), property);
 }
 } // namespace graph
