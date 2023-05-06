@@ -1,5 +1,6 @@
 #include "graph/graph.hpp"
 
+#include <iostream>
 #include <snitch/snitch.hpp>
 
 using namespace nlohmann::literals;
@@ -118,15 +119,15 @@ R"({
 const nlohmann::json test_relationship_mitigates =
 R"({
     "type": "mitigates",
-    "source": 0,
-    "target": 1
+    "source": "0",
+    "target": "1"
 })"_json;
 
 const nlohmann::json test_relationship_needs =
 R"({
     "type": "needs",
-    "source": 2,
-    "target": 0,
+    "source": "2",
+    "target": "0",
     "properties": {
         "priority": "MUST"
     }
@@ -134,13 +135,13 @@ R"({
 // clang-format on
 } // namespace
 
-TEST_CASE("schema load/save good") {
+TEST_CASE("schema load/dump good") {
     const nlohmann::json data_in = test_schema;
 
     entt::registry r;
     graph::load_schema(r, data_in);
 
-    const nlohmann::json data_out = graph::save_schema(r);
+    const nlohmann::json data_out = graph::dump_schema(r);
 
     CHECK(data_in == data_out);
 }
@@ -296,28 +297,29 @@ TEST_CASE("add_relationship bad") {
 
     SECTION("unknown type") {
         auto e =
-            graph::add_relationship(r, R"({"type": "bazooka", "source": 2, "target": 0})"_json);
+            graph::add_relationship(r, R"({"type": "bazooka", "source": "2", "target": "0"})"_json);
         REQUIRE_INVALID(e, "unknown relationship type");
     }
 
     SECTION("missing source") {
-        auto e = graph::add_relationship(r, R"({"type": "mitigates", "target": 1})"_json);
+        auto e = graph::add_relationship(r, R"({"type": "mitigates", "target": "1"})"_json);
         REQUIRE_INVALID(e, "missing relationship source");
     }
 
     SECTION("missing target") {
-        auto e = graph::add_relationship(r, R"({"type": "mitigates", "source": 0})"_json);
+        auto e = graph::add_relationship(r, R"({"type": "mitigates", "source": "0"})"_json);
         REQUIRE_INVALID(e, "missing relationship target");
     }
 
     SECTION("empty property") {
-        auto e = graph::add_relationship(r, R"({"type": "needs", "source": 2, "target": 0})"_json);
+        auto e =
+            graph::add_relationship(r, R"({"type": "needs", "source": "2", "target": "0"})"_json);
         REQUIRE_INVALID(e, "missing property");
     }
 
     SECTION("missing property") {
         auto e = graph::add_relationship(
-            r, R"({"type": "needs", "source": 2, "target": 0, "properties": {}})"_json);
+            r, R"({"type": "needs", "source": "2", "target": "0", "properties": {}})"_json);
         REQUIRE_INVALID(e, "missing property");
     }
 
@@ -326,7 +328,7 @@ TEST_CASE("add_relationship bad") {
     SECTION("duplicate property") {
         auto e = graph::add_relationship(
             r,
-            R"({"type": "needs", "source": 2, "target": 0, "properties": {"priority": "MUST", "priority": "SHOULD"}})"_json);
+            R"({"type": "needs", "source": "2", "target": "0", "properties": {"priority": "MUST", "priority": "SHOULD"}})"_json);
         REQUIRE_INVALID(e, "duplicate property");
     }
 #endif
@@ -334,21 +336,21 @@ TEST_CASE("add_relationship bad") {
     SECTION("unknown property") {
         auto e = graph::add_relationship(
             r,
-            R"({"type": "needs", "source": 2, "target": 0, "properties": {"priority": "MUST", "kitten": false}})"_json);
+            R"({"type": "needs", "source": "2", "target": "0", "properties": {"priority": "MUST", "kitten": false}})"_json);
         REQUIRE_INVALID(e, "unknown property");
     }
 
     SECTION("wrong type property") {
         auto e = graph::add_relationship(
             r,
-            R"({"type": "needs", "source": 2, "target": 0, "properties": {"priority": 1}})"_json);
+            R"({"type": "needs", "source": "2", "target": "0", "properties": {"priority": 1}})"_json);
         REQUIRE_INVALID(e, "expected string value");
     }
 
     SECTION("source does not exist") {
         auto e = graph::add_relationship(
             r,
-            R"({"type": "needs", "source": 100, "target": 0, "properties": {"priority": "MUST"}})"_json);
+            R"({"type": "needs", "source": "100", "target": "0", "properties": {"priority": "MUST"}})"_json);
         REQUIRE_INVALID(e, "source does not exist");
     }
 
@@ -359,21 +361,21 @@ TEST_CASE("add_relationship bad") {
 
         auto e2 = graph::add_relationship(
             r,
-            R"({"type": "needs", "source": 3, "target": 0, "properties": {"priority": "MUST"}})"_json);
+            R"({"type": "needs", "source": "3", "target": "0", "properties": {"priority": "MUST"}})"_json);
         REQUIRE_INVALID(e2, "source is not a node");
     }
 
     SECTION("wrong source type") {
         auto e = graph::add_relationship(
             r,
-            R"({"type": "needs", "source": 1, "target": 0, "properties": {"priority": "MUST"}})"_json);
+            R"({"type": "needs", "source": "1", "target": "0", "properties": {"priority": "MUST"}})"_json);
         REQUIRE_INVALID(e, "source has incorrect type");
     }
 
     SECTION("target does not exist") {
         auto e = graph::add_relationship(
             r,
-            R"({"type": "needs", "source": 2, "target": 100, "properties": {"priority": "MUST"}})"_json);
+            R"({"type": "needs", "source": "2", "target": "100", "properties": {"priority": "MUST"}})"_json);
         REQUIRE_INVALID(e, "target does not exist");
     }
 
@@ -384,14 +386,14 @@ TEST_CASE("add_relationship bad") {
 
         auto e2 = graph::add_relationship(
             r,
-            R"({"type": "needs", "source": 2, "target": 3, "properties": {"priority": "MUST"}})"_json);
+            R"({"type": "needs", "source": "2", "target": "3", "properties": {"priority": "MUST"}})"_json);
         REQUIRE_INVALID(e2, "target is not a node");
     }
 
     SECTION("wrong target type") {
         auto e = graph::add_relationship(
             r,
-            R"({"type": "needs", "source": 2, "target": 1, "properties": {"priority": "MUST"}})"_json);
+            R"({"type": "needs", "source": "2", "target": "1", "properties": {"priority": "MUST"}})"_json);
         REQUIRE_INVALID(e, "target has incorrect type");
     }
 }
@@ -478,4 +480,27 @@ TEST_CASE("get_node_relationships good") {
         REQUIRE(rs.value().size() == 1u);
         CHECK(rs.value()[0u].get<std::uint64_t>() == 6);
     }
+}
+
+TEST_CASE("db dump/load good") {
+    entt::registry r;
+    graph::load_schema(r, test_schema);
+    add_test_relationships(r);
+
+    auto db = graph::dump(r);
+    REQUIRE(db.size() == 3u);
+    REQUIRE(db.contains("schema"sv));
+    REQUIRE(db.contains("nodes"sv));
+    REQUIRE(db.contains("relationships"sv));
+    REQUIRE(db["schema"sv].size() == 2u);
+    REQUIRE(db["schema"sv].contains("nodes"sv));
+    REQUIRE(db["schema"sv].contains("relationships"sv));
+    REQUIRE(db["schema"sv]["nodes"sv].size() == 3u);
+    REQUIRE(db["schema"sv]["relationships"sv].size() == 3u);
+    REQUIRE(db["nodes"sv].size() == 4u);
+    REQUIRE(db["relationships"sv].size() == 3u);
+
+    entt::registry r2;
+    auto           res = graph::load(r2, db);
+    REQUIRE_VALID(res);
 }
