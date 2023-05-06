@@ -217,8 +217,7 @@ const schema_node& get_node_schema(const registry& r, hash_t type) noexcept {
     return *schema;
 }
 
-expected<std::reference_wrapper<const schema_node>>
-get_node_schema(const registry& r, entity node) {
+expected<std::reference_wrapper<const node_base>> get_node_props(const registry& r, entity node) {
     if (!r.valid(node)) {
         return std::unexpected("node does not exist"sv);
     }
@@ -228,7 +227,17 @@ get_node_schema(const registry& r, entity node) {
         return std::unexpected("not a node"sv);
     }
 
-    const auto type = node_props->type;
+    return *node_props;
+}
+
+expected<std::reference_wrapper<const schema_node>>
+get_node_schema(const registry& r, entity node) {
+    const auto node_props = get_node_props(r, node);
+    if (!node_props) {
+        return std::unexpected(node_props.error());
+    }
+
+    const auto type = node_props.value().get().type;
     return get_node_schema(r, type);
 }
 
@@ -1049,4 +1058,44 @@ expected<json> get_node_relationships(const registry& r, entity node, std::strin
 
     return data;
 }
+
+expected<void> delete_node(registry& r, entity node) {
+    const auto node_props = get_node_props(r, node);
+    if (!node_props) {
+        return std::unexpected(node_props.error());
+    }
+
+    const auto node_type = node_props.value().get().type;
+
+    r.destroy(node);
+
+    const auto& graph_schema = r.ctx().get<schema_graph>();
+    for (const auto& relationship_schema : graph_schema.relationships) {
+        if (relationship_schema.source.hash != node_type &&
+            relationship_schema.target.hash != node_type) {
+            continue;
+        }
+
+        auto view = view_relationships(r, relationship_schema.type.hash);
+        for (auto relationship : view) {
+            const auto& relationship_props = view.get<relationship_base>(relationship);
+            if (relationship_props.source == node || relationship_props.target == node) {
+                r.destroy(relationship);
+            }
+        }
+    }
+
+    return {};
+}
+
+expected<void> delete_relationship(registry& r, entity relationship) {
+    if (auto relationship_props = get_relationship_props(r, relationship); !relationship_props) {
+        return std::unexpected(relationship_props.error());
+    }
+
+    r.destroy(relationship);
+
+    return {};
+}
+
 } // namespace graph

@@ -5,7 +5,9 @@
 
 using namespace nlohmann::literals;
 using namespace std::literals;
+using graph::entity;
 using graph::json;
+using graph::registry;
 
 namespace snitch {
 bool append(small_string_span ss, const json& j) noexcept {
@@ -139,7 +141,7 @@ R"({
 TEST_CASE("schema load/dump good") {
     const json data_in = test_schema;
 
-    entt::registry r;
+    registry r;
     graph::load_schema(r, data_in);
 
     const json data_out = graph::dump_schema(r);
@@ -148,7 +150,7 @@ TEST_CASE("schema load/dump good") {
 }
 
 TEST_CASE("add_node good") {
-    entt::registry r;
+    registry r;
     graph::load_schema(r, test_schema);
 
     const auto node_ret = graph::add_node(r, test_node_requirement);
@@ -189,7 +191,7 @@ TEST_CASE("add_node good") {
 }
 
 TEST_CASE("add_node bad") {
-    entt::registry r;
+    registry r;
     graph::load_schema(r, test_schema);
 
     SECTION("missing type") {
@@ -238,7 +240,7 @@ TEST_CASE("add_node bad") {
 }
 
 namespace {
-void add_test_nodes(entt::registry& r) {
+void add_test_nodes(registry& r) {
     auto n1 = graph::add_node(r, test_node_requirement);
     REQUIRE_VALID(n1);
     REQUIRE(static_cast<std::uint64_t>(n1.value()) == 0);
@@ -252,7 +254,7 @@ void add_test_nodes(entt::registry& r) {
 } // namespace
 
 TEST_CASE("add_relationship good") {
-    entt::registry r;
+    registry r;
     graph::load_schema(r, test_schema);
     add_test_nodes(r);
 
@@ -269,12 +271,12 @@ TEST_CASE("add_relationship good") {
         {
             auto p = graph::get_relationship_source(r, relationship);
             REQUIRE_VALID(p);
-            CHECK(p.value() == static_cast<entt::entity>(0));
+            CHECK(p.value() == static_cast<entity>(0));
         }
         {
             auto p = graph::get_relationship_target(r, relationship);
             REQUIRE_VALID(p);
-            CHECK(p.value() == static_cast<entt::entity>(1));
+            CHECK(p.value() == static_cast<entity>(1));
         }
     }
 
@@ -301,12 +303,12 @@ TEST_CASE("add_relationship good") {
         {
             auto p = graph::get_relationship_source(r, relationship);
             REQUIRE_VALID(p);
-            CHECK(p.value() == static_cast<entt::entity>(2));
+            CHECK(p.value() == static_cast<entity>(2));
         }
         {
             auto p = graph::get_relationship_target(r, relationship);
             REQUIRE_VALID(p);
-            CHECK(p.value() == static_cast<entt::entity>(0));
+            CHECK(p.value() == static_cast<entity>(0));
         }
         {
             auto p = graph::get_relationship_property(r, relationship, "priority"sv);
@@ -324,7 +326,7 @@ TEST_CASE("add_relationship good") {
 }
 
 TEST_CASE("add_relationship bad") {
-    entt::registry r;
+    registry r;
     graph::load_schema(r, test_schema);
     add_test_nodes(r);
 
@@ -437,7 +439,7 @@ TEST_CASE("add_relationship bad") {
 }
 
 namespace {
-void add_test_relationships(entt::registry& r) {
+void add_test_relationships(registry& r) {
     add_test_nodes(r);
 
     auto n4 = graph::add_node(r, test_node_customer2);
@@ -457,25 +459,25 @@ void add_test_relationships(entt::registry& r) {
 } // namespace
 
 TEST_CASE("get_node_relationships good") {
-    entt::registry r;
+    registry r;
     graph::load_schema(r, test_schema);
     add_test_relationships(r);
 
     SECTION("no relationships") {
-        auto rs = graph::get_node_relationships(r, static_cast<entt::entity>(3));
+        auto rs = graph::get_node_relationships(r, static_cast<entity>(3));
         REQUIRE_VALID(rs);
         CHECK(rs.value().empty());
     }
 
     SECTION("one relationship") {
-        auto rs = graph::get_node_relationships(r, static_cast<entt::entity>(2));
+        auto rs = graph::get_node_relationships(r, static_cast<entity>(2));
         REQUIRE_VALID(rs);
         REQUIRE(rs.value().size() == 1u);
         CHECK(rs.value()[0u].get<std::uint64_t>() == 6);
     }
 
     SECTION("many relationship") {
-        auto rs = graph::get_node_relationships(r, static_cast<entt::entity>(0));
+        auto rs = graph::get_node_relationships(r, static_cast<entity>(0));
         REQUIRE_VALID(rs);
         REQUIRE(rs.value().size() == 3u);
 
@@ -489,18 +491,18 @@ TEST_CASE("get_node_relationships good") {
     }
 
     SECTION("no relationships typed") {
-        auto rs = graph::get_node_relationships(r, static_cast<entt::entity>(3), "needs"sv);
+        auto rs = graph::get_node_relationships(r, static_cast<entity>(3), "needs"sv);
         REQUIRE_VALID(rs);
         CHECK(rs.value().empty());
     }
 
     SECTION("no relationships typed impossible") {
-        auto rs = graph::get_node_relationships(r, static_cast<entt::entity>(3), "mitigates"sv);
+        auto rs = graph::get_node_relationships(r, static_cast<entity>(3), "mitigates"sv);
         REQUIRE_INVALID(rs, "this node cannot have this relationship");
     }
 
     SECTION("many relationships typed 1") {
-        auto rs = graph::get_node_relationships(r, static_cast<entt::entity>(0), "mitigates"sv);
+        auto rs = graph::get_node_relationships(r, static_cast<entity>(0), "mitigates"sv);
         REQUIRE_VALID(rs);
         REQUIRE(rs.value().size() == 2u);
 
@@ -513,7 +515,7 @@ TEST_CASE("get_node_relationships good") {
     }
 
     SECTION("many relationships typed 2") {
-        auto rs = graph::get_node_relationships(r, static_cast<entt::entity>(0), "needs"sv);
+        auto rs = graph::get_node_relationships(r, static_cast<entity>(0), "needs"sv);
         REQUIRE_VALID(rs);
         REQUIRE(rs.value().size() == 1u);
         CHECK(rs.value()[0u].get<std::uint64_t>() == 6);
@@ -521,7 +523,7 @@ TEST_CASE("get_node_relationships good") {
 }
 
 TEST_CASE("db dump/load good") {
-    entt::registry r;
+    registry r;
     graph::load_schema(r, test_schema);
     add_test_relationships(r);
 
@@ -538,7 +540,47 @@ TEST_CASE("db dump/load good") {
     REQUIRE(db["nodes"sv].size() == 4u);
     REQUIRE(db["relationships"sv].size() == 3u);
 
-    entt::registry r2;
-    auto           res = graph::load(r2, db);
+    registry r2;
+    auto     res = graph::load(r2, db);
     REQUIRE_VALID(res);
+}
+
+TEST_CASE("delete node") {
+    registry r;
+    graph::load_schema(r, test_schema);
+    add_test_relationships(r);
+
+    SECTION("delete no relationships") {
+        auto res = graph::delete_node(r, static_cast<entity>(3));
+        REQUIRE_VALID(res);
+
+        auto t = graph::get_node_type(r, static_cast<entity>(3));
+        REQUIRE_INVALID(t, "node does not exist");
+    }
+
+    SECTION("delete with relationships") {
+        auto res = graph::delete_node(r, static_cast<entity>(0));
+        REQUIRE_VALID(res);
+
+        auto nt = graph::get_node_type(r, static_cast<entity>(0));
+        REQUIRE_INVALID(nt, "node does not exist");
+        auto rt1 = graph::get_relationship_type(r, static_cast<entity>(4));
+        REQUIRE_INVALID(rt1, "relationship does not exist");
+        auto rt2 = graph::get_relationship_type(r, static_cast<entity>(5));
+        REQUIRE_INVALID(rt2, "relationship does not exist");
+        auto rt3 = graph::get_relationship_type(r, static_cast<entity>(6));
+        REQUIRE_INVALID(rt3, "relationship does not exist");
+    }
+}
+
+TEST_CASE("delete relationship") {
+    registry r;
+    graph::load_schema(r, test_schema);
+    add_test_relationships(r);
+
+    auto res = graph::delete_relationship(r, static_cast<entity>(4));
+    REQUIRE_VALID(res);
+
+    auto t = graph::get_relationship_type(r, static_cast<entity>(4));
+    REQUIRE_INVALID(t, "relationship does not exist");
 }

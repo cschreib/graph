@@ -55,4 +55,8 @@ expected<json> get_relationship_properties(const registry& r, entity node);
 expected<json> get_node_relationships(const registry& r, entity node);
 
 expected<json> get_node_relationships(const registry& r, entity node, std::string_view type);
+
+expected<void> delete_node(registry& r, entity node);
+
+expected<void> delete_relationship(registry& r, entity relationship);
 } // namespace graph
