@@ -97,12 +97,21 @@ R"({
     }
 })"_json;
 
-const nlohmann::json test_node_customer =
+const nlohmann::json test_node_customer1 =
 R"({
     "type": "customer",
     "properties": {
         "id": "super_corp",
         "name": "Super Corp Ltd."
+    }
+})"_json;
+
+const nlohmann::json test_node_customer2 =
+R"({
+    "type": "customer",
+    "properties": {
+        "id": "mega_corp",
+        "name": "Mega Corp Inc."
     }
 })"_json;
 
@@ -229,7 +238,7 @@ void add_test_nodes(entt::registry& r) {
     auto n2 = graph::add_node(r, test_node_risk);
     REQUIRE_VALID(n2);
     REQUIRE(static_cast<std::uint64_t>(n2.value()) == 1);
-    auto n3 = graph::add_node(r, test_node_customer);
+    auto n3 = graph::add_node(r, test_node_customer1);
     REQUIRE_VALID(n3);
     REQUIRE(static_cast<std::uint64_t>(n3.value()) == 2);
 }
@@ -384,5 +393,89 @@ TEST_CASE("add_relationship bad") {
             r,
             R"({"type": "needs", "source": 2, "target": 1, "properties": {"priority": "MUST"}})"_json);
         REQUIRE_INVALID(e, "target has incorrect type");
+    }
+}
+
+namespace {
+void add_test_relationships(entt::registry& r) {
+    add_test_nodes(r);
+
+    auto n4 = graph::add_node(r, test_node_customer2);
+    REQUIRE_VALID(n4);
+    REQUIRE(static_cast<std::uint64_t>(n4.value()) == 3);
+
+    auto e1 = graph::add_relationship(r, test_relationship_mitigates);
+    REQUIRE_VALID(e1);
+    REQUIRE(static_cast<std::uint64_t>(e1.value()) == 4);
+    auto e2 = graph::add_relationship(r, test_relationship_mitigates);
+    REQUIRE_VALID(e2);
+    REQUIRE(static_cast<std::uint64_t>(e2.value()) == 5);
+    auto e3 = graph::add_relationship(r, test_relationship_needs);
+    REQUIRE_VALID(e3);
+    REQUIRE(static_cast<std::uint64_t>(e3.value()) == 6);
+}
+} // namespace
+
+TEST_CASE("get_node_relationships good") {
+    entt::registry r;
+    graph::load_schema(r, test_schema);
+    add_test_relationships(r);
+
+    SECTION("no relationships") {
+        auto rs = graph::get_node_relationships(r, static_cast<entt::entity>(3));
+        REQUIRE_VALID(rs);
+        CHECK(rs.value().empty());
+    }
+
+    SECTION("one relationship") {
+        auto rs = graph::get_node_relationships(r, static_cast<entt::entity>(2));
+        REQUIRE_VALID(rs);
+        REQUIRE(rs.value().size() == 1u);
+        CHECK(rs.value()[0u].get<std::uint64_t>() == 6);
+    }
+
+    SECTION("many relationship") {
+        auto rs = graph::get_node_relationships(r, static_cast<entt::entity>(0));
+        REQUIRE_VALID(rs);
+        REQUIRE(rs.value().size() == 3u);
+
+        // Order is unspecified, so sort to make it deterministic.
+        auto a = rs.value().get<std::array<std::uint64_t, 3>>();
+        std::sort(a.begin(), a.end());
+
+        CHECK(a[0u] == 4);
+        CHECK(a[1u] == 5);
+        CHECK(a[2u] == 6);
+    }
+
+    SECTION("no relationships typed") {
+        auto rs = graph::get_node_relationships(r, static_cast<entt::entity>(3), "needs"sv);
+        REQUIRE_VALID(rs);
+        CHECK(rs.value().empty());
+    }
+
+    SECTION("no relationships typed impossible") {
+        auto rs = graph::get_node_relationships(r, static_cast<entt::entity>(3), "mitigates"sv);
+        REQUIRE_INVALID(rs, "this node cannot have this relationship");
+    }
+
+    SECTION("many relationships typed 1") {
+        auto rs = graph::get_node_relationships(r, static_cast<entt::entity>(0), "mitigates"sv);
+        REQUIRE_VALID(rs);
+        REQUIRE(rs.value().size() == 2u);
+
+        // Order is unspecified, so sort to make it deterministic.
+        auto a = rs.value().get<std::array<std::uint64_t, 2>>();
+        std::sort(a.begin(), a.end());
+
+        CHECK(a[0u] == 4);
+        CHECK(a[1u] == 5);
+    }
+
+    SECTION("many relationships typed 2") {
+        auto rs = graph::get_node_relationships(r, static_cast<entt::entity>(0), "needs"sv);
+        REQUIRE_VALID(rs);
+        REQUIRE(rs.value().size() == 1u);
+        CHECK(rs.value()[0u].get<std::uint64_t>() == 6);
     }
 }

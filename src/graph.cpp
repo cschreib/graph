@@ -149,10 +149,6 @@ auto& load_schema_item(Storage& r, std::string_view name, const nlohmann::json& 
     typename Storage::value_type item{.type = add_hash(name)};
     if (data.contains("properties"sv)) {
         for (const auto& [k, v] : data["properties"sv].items()) {
-            if (std::string_view(k).starts_with("__")) {
-                continue;
-            }
-
             load_schema_property(item, name, k, v);
         }
     }
@@ -477,6 +473,26 @@ nlohmann::json save_schema_relationship(const schema_relationship& l) {
     return data;
 }
 
+void add_tag(entt::registry& r, entt::entity e, hash_t tag) {
+    static_assert(sizeof(entt::id_type) == sizeof(hash_data_t));
+    auto& s = r.storage<std::monostate>(static_cast<entt::id_type>(tag));
+    s.emplace(e);
+}
+
+template<typename Registry>
+auto view_nodes(Registry& r, hash_t type) {
+    static_assert(sizeof(entt::id_type) == sizeof(hash_data_t));
+    return r.template view<node_base>() |
+           entt::basic_view{r.template storage<std::monostate>(static_cast<entt::id_type>(type))};
+}
+
+template<typename Registry>
+auto view_relationships(Registry& r, hash_t type) {
+    static_assert(sizeof(entt::id_type) == sizeof(hash_data_t));
+    return r.template view<relationship_base>() |
+           entt::basic_view{r.template storage<std::monostate>(static_cast<entt::id_type>(type))};
+}
+
 template<typename StorageType>
 void add_property(entt::registry& r, entt::entity e, hash_t name_hash, const StorageType& value) {
     static_assert(sizeof(entt::id_type) == sizeof(hash_data_t));
@@ -628,11 +644,12 @@ add_node(entt::registry& r, const nlohmann::json& node) {
 
     // From now on, parsing success is guaranteed, we can commit the data.
     // Exceptions may still be thrown when out-of-memory, or entity cap reached.
-    // So wrap all in try/catch target cancel on failure. These should be rare.
+    // So wrap all in try/catch to cancel on failure. These should be rare.
     entt::entity e = entt::null;
     try {
         e = r.create();
         r.emplace<node_base>(e, node_base{.type = validated.type});
+        add_tag(r, e, validated.type);
         add_properties(r, e, validated, node);
     } catch (...) {
         if (e != entt::null) {
@@ -656,13 +673,14 @@ add_relationship(entt::registry& r, const nlohmann::json& relationship) {
 
     // From now on, parsing success is guaranteed, we can commit the data.
     // Exceptions may still be thrown when out-of-memory, or entity cap reached.
-    // So wrap all in try/catch target cancel on failure. These should be rare.
+    // So wrap all in try/catch to cancel on failure. These should be rare.
     entt::entity e = entt::null;
     try {
         e = r.create();
         r.emplace<relationship_base>(
             e, relationship_base{
                    .type = validated.type, .source = validated.source, .target = validated.target});
+        add_tag(r, e, validated.type);
         add_properties(r, e, validated, relationship);
     } catch (...) {
         if (e != entt::null) {
@@ -712,5 +730,66 @@ get_relationship_properties(const entt::registry& r, entt::entity relationship) 
     }
 
     return get_properties(r, relationship, relationship_schema_chk.value().get());
+}
+
+std::expected<nlohmann::json, std::string_view>
+get_node_relationships(const entt::registry& r, entt::entity node) {
+    const auto node_schema_chk = get_node_schema(r, node);
+    if (!node_schema_chk) {
+        return std::unexpected(node_schema_chk.error());
+    }
+
+    const auto& node_schema  = node_schema_chk.value().get();
+    const auto& graph_schema = r.ctx().get<schema_graph>();
+
+    nlohmann::json data(nlohmann::json::value_t::array);
+
+    for (const auto& relationship_schema : graph_schema.relationships) {
+        if (relationship_schema.source.hash != node_schema.type.hash &&
+            relationship_schema.target.hash != node_schema.type.hash) {
+            continue;
+        }
+
+        auto view = view_relationships(r, relationship_schema.type.hash);
+        for (auto relationship : view) {
+            const auto& relationship_props = view.get<relationship_base>(relationship);
+            if (relationship_props.source == node || relationship_props.target == node) {
+                data.push_back(relationship);
+            }
+        }
+    }
+
+    return data;
+}
+
+std::expected<nlohmann::json, std::string_view>
+get_node_relationships(const entt::registry& r, entt::entity node, std::string_view type) {
+    const auto node_schema_chk = get_node_schema(r, node);
+    if (!node_schema_chk) {
+        return std::unexpected(node_schema_chk.error());
+    }
+
+    const auto& node_schema         = node_schema_chk.value().get();
+    const auto* relationship_schema = try_get_relationship_schema(r, hash(type));
+    if (relationship_schema == nullptr) {
+        return std::unexpected("unknown relationship type");
+    }
+
+    if (relationship_schema->source.hash != node_schema.type.hash &&
+        relationship_schema->target.hash != node_schema.type.hash) {
+        return std::unexpected("this node cannot have this relationship");
+    }
+
+    nlohmann::json data(nlohmann::json::value_t::array);
+
+    auto view = view_relationships(r, relationship_schema->type.hash);
+    for (auto relationship : view) {
+        const auto& relationship_props = view.get<relationship_base>(relationship);
+        if (relationship_props.source == node || relationship_props.target == node) {
+            data.push_back(relationship);
+        }
+    }
+
+    return data;
 }
 } // namespace graph
