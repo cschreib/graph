@@ -47,7 +47,11 @@ template<typename T>
 
 struct hashed_string {
     hash_t                                    hash{};
-    graph::small_string<max_string_id_length> str{};
+    graph::small_string<max_string_id_length> data{};
+
+    std::string_view str() const noexcept {
+        return data.str();
+    }
 };
 
 struct string_property {
@@ -72,26 +76,6 @@ void to_json(nlohmann::json& j, const string_property& s) {
             }
         },
         s.value);
-}
-
-graph::small_string<32> id_to_string(entt::entity e) noexcept {
-    graph::small_string<32> buffer;
-    auto                    res = std::to_chars(
-        buffer.data(), buffer.data() + buffer.capacity(), static_cast<std::uint64_t>(e));
-    buffer.resize(res.ptr - buffer.data());
-    return buffer;
-}
-
-std::expected<entt::entity, std::string_view> id_from_string(std::string_view s) noexcept {
-    static_assert(sizeof(entt::entity) == sizeof(std::uint64_t));
-
-    std::uint64_t i   = 0u;
-    auto          res = std::from_chars(s.begin(), s.end(), i);
-    if (res.ptr == s.begin()) {
-        return std::unexpected("ID is not a valid number");
-    }
-
-    return static_cast<entt::entity>(i);
 }
 
 using property_type = std::variant<bool, std::int64_t, double, string_property>;
@@ -147,15 +131,15 @@ hash_t hash(hash_t h1, std::string_view s2) noexcept {
 }
 
 hashed_string add_hash(std::string_view s) noexcept {
-    return hashed_string{.hash = hash(s), .str = s};
+    return hashed_string{.hash = hash(s), .data = s};
 }
 
 hashed_string add_hash(std::string_view base, std::string_view element) noexcept {
-    return hashed_string{.hash = hash(base, element), .str = element};
+    return hashed_string{.hash = hash(base, element), .data = element};
 }
 
 hashed_string add_hash(hash_t base_hash, std::string_view element) noexcept {
-    return hashed_string{.hash = hash(base_hash, element), .str = element};
+    return hashed_string{.hash = hash(base_hash, element), .data = element};
 }
 
 template<typename Item>
@@ -263,8 +247,8 @@ const schema_relationship& get_relationship_schema(const entt::registry& r, hash
     return *schema;
 }
 
-std::expected<std::reference_wrapper<const schema_relationship>, std::string_view>
-get_relationship_schema(const entt::registry& r, entt::entity relationship) {
+std::expected<std::reference_wrapper<const relationship_base>, std::string_view>
+get_relationship_props(const entt::registry& r, entt::entity relationship) {
     if (!r.valid(relationship)) {
         return std::unexpected("relationship does not exist"sv);
     }
@@ -274,8 +258,17 @@ get_relationship_schema(const entt::registry& r, entt::entity relationship) {
         return std::unexpected("not a relationship"sv);
     }
 
-    const auto type = relationship_props->type;
-    return get_relationship_schema(r, type);
+    return *relationship_props;
+}
+
+std::expected<std::reference_wrapper<const schema_relationship>, std::string_view>
+get_relationship_schema(const entt::registry& r, entt::entity relationship) {
+    const auto relationship_props = get_relationship_props(r, relationship);
+    if (!relationship_props) {
+        return std::unexpected(relationship_props.error());
+    }
+
+    return get_relationship_schema(r, relationship_props.value().get().type);
 }
 
 template<typename Item>
@@ -419,7 +412,7 @@ check_relationship_schema(const entt::registry& r, const nlohmann::json& relatio
         return std::unexpected("unknown relationship type"sv);
     }
 
-    const auto source = id_from_string(relationship["source"sv].get<std::string>());
+    const auto source = graph::id_from_string(relationship["source"sv].get<std::string>());
     if (!source) {
         return std::unexpected(source.error());
     }
@@ -437,7 +430,7 @@ check_relationship_schema(const entt::registry& r, const nlohmann::json& relatio
         return std::unexpected("source has incorrect type"sv);
     }
 
-    const auto target = id_from_string(relationship["target"sv].get<std::string>());
+    const auto target = graph::id_from_string(relationship["target"sv].get<std::string>());
     if (!target) {
         return std::unexpected(target.error());
     }
@@ -488,7 +481,7 @@ nlohmann::json save_schema_item(const Item& n) {
     if (!n.properties.empty()) {
         nlohmann::json properties(nlohmann::json::value_t::object);
         for (const auto& p : n.properties) {
-            properties[p.name.str.str()] = p.type.str.str();
+            properties[p.name.str()] = p.type.str();
         }
 
         data["properties"sv] = std::move(properties);
@@ -499,8 +492,8 @@ nlohmann::json save_schema_item(const Item& n) {
 
 nlohmann::json save_schema_relationship(const schema_relationship& l) {
     nlohmann::json data = save_schema_item(l);
-    data["source"sv]    = l.source.str.str();
-    data["target"sv]    = l.target.str.str();
+    data["source"sv]    = l.source.str();
+    data["target"sv]    = l.target.str();
 
     return data;
 }
@@ -607,7 +600,7 @@ get_properties(const entt::registry& r, entt::entity item, const Schema& schema)
     for (const auto& property_schema : schema.properties) {
         const auto p = get_property(r, item, property_schema);
         std::visit(
-            [&](const auto& pv) { data[property_schema.name.str.str()] = nlohmann::json(pv); }, p);
+            [&](const auto& pv) { data[property_schema.name.str()] = nlohmann::json(pv); }, p);
     }
 
     return data;
@@ -615,6 +608,26 @@ get_properties(const entt::registry& r, entt::entity item, const Schema& schema)
 } // namespace
 
 namespace graph {
+graph::small_string<32> id_to_string(entt::entity e) noexcept {
+    graph::small_string<32> buffer;
+    auto                    res = std::to_chars(
+        buffer.data(), buffer.data() + buffer.capacity(), static_cast<std::uint64_t>(e));
+    buffer.resize(res.ptr - buffer.data());
+    return buffer;
+}
+
+std::expected<entt::entity, std::string_view> id_from_string(std::string_view s) noexcept {
+    static_assert(sizeof(entt::entity) == sizeof(std::uint64_t));
+
+    std::uint64_t i   = 0u;
+    auto          res = std::from_chars(s.begin(), s.end(), i);
+    if (res.ptr == s.begin()) {
+        return std::unexpected("ID is not a valid number");
+    }
+
+    return static_cast<entt::entity>(i);
+}
+
 std::expected<void, std::string_view> load_schema(entt::registry& r, const nlohmann::json& data) {
     if (r.alive() > 0) {
         graph::terminate_with(
@@ -655,7 +668,7 @@ nlohmann::json dump_schema(const entt::registry& r) {
     {
         nlohmann::json nodes(nlohmann::json::value_t::object);
         for (const auto& n : schema.nodes) {
-            nodes[n.type.str.str()] = save_schema_item(n);
+            nodes[n.type.str()] = save_schema_item(n);
         }
 
         data["nodes"sv] = std::move(nodes);
@@ -664,7 +677,7 @@ nlohmann::json dump_schema(const entt::registry& r) {
     {
         nlohmann::json relationships(nlohmann::json::value_t::object);
         for (const auto& l : schema.relationships) {
-            relationships[l.type.str.str()] = save_schema_relationship(l);
+            relationships[l.type.str()] = save_schema_relationship(l);
         }
 
         data["relationships"sv] = std::move(relationships);
@@ -702,7 +715,7 @@ nlohmann::json dump_nodes(const entt::registry& r) {
         auto view = view_nodes(r, node_schema.type.hash);
         for (auto e : view) {
             nlohmann::json node(nlohmann::json::value_t::object);
-            node["type"sv] = node_schema.type.str.str();
+            node["type"sv] = node_schema.type.str();
             if (!node_schema.properties.empty()) {
                 node["properties"sv] = get_node_properties(r, e).value();
             }
@@ -745,7 +758,7 @@ nlohmann::json dump_relationships(const entt::registry& r) {
             const auto& rs = view.get<relationship_base>(e);
 
             nlohmann::json relationship(nlohmann::json::value_t::object);
-            relationship["type"sv]   = relationship_schema.type.str.str();
+            relationship["type"sv]   = relationship_schema.type.str();
             relationship["source"sv] = id_to_string(rs.source);
             relationship["target"sv] = id_to_string(rs.target);
             if (!relationship_schema.properties.empty()) {
@@ -921,6 +934,46 @@ add_relationship(entt::registry& r, entt::entity e, const nlohmann::json& relati
     }
 
     return e;
+}
+
+std::expected<std::string_view, std::string_view>
+get_node_type(const entt::registry& r, entt::entity node) {
+    const auto node_schema_chk = get_node_schema(r, node);
+    if (!node_schema_chk) {
+        return std::unexpected(node_schema_chk.error());
+    }
+
+    return node_schema_chk.value().get().type.str();
+}
+
+std::expected<std::string_view, std::string_view>
+get_relationship_type(const entt::registry& r, entt::entity relationship) {
+    const auto relationship_schema_chk = get_relationship_schema(r, relationship);
+    if (!relationship_schema_chk) {
+        return std::unexpected(relationship_schema_chk.error());
+    }
+
+    return relationship_schema_chk.value().get().type.str();
+}
+
+std::expected<entt::entity, std::string_view>
+get_relationship_target(const entt::registry& r, entt::entity relationship) {
+    const auto relationship_props_chk = get_relationship_props(r, relationship);
+    if (!relationship_props_chk) {
+        return std::unexpected(relationship_props_chk.error());
+    }
+
+    return relationship_props_chk.value().get().target;
+}
+
+std::expected<entt::entity, std::string_view>
+get_relationship_source(const entt::registry& r, entt::entity relationship) {
+    const auto relationship_props_chk = get_relationship_props(r, relationship);
+    if (!relationship_props_chk) {
+        return std::unexpected(relationship_props_chk.error());
+    }
+
+    return relationship_props_chk.value().get().source;
 }
 
 std::expected<nlohmann::json, std::string_view>

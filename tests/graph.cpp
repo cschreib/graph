@@ -155,6 +155,11 @@ TEST_CASE("add_node good") {
     const auto node = node_ret.value();
 
     {
+        auto p = graph::get_node_type(r, node);
+        REQUIRE_VALID(p);
+        CHECK(p.value() == "requirement"sv);
+    }
+    {
         auto p = graph::get_node_property(r, node, "id"sv);
         REQUIRE_VALID(p);
         CHECK(p.value().get<std::string>() == "Req.1"sv);
@@ -253,6 +258,23 @@ TEST_CASE("add_relationship good") {
     SECTION("no properties") {
         const auto relationship_ret = graph::add_relationship(r, test_relationship_mitigates);
         REQUIRE_VALID(relationship_ret);
+        const auto relationship = relationship_ret.value();
+
+        {
+            auto p = graph::get_relationship_type(r, relationship);
+            REQUIRE_VALID(p);
+            CHECK(p.value() == "mitigates"sv);
+        }
+        {
+            auto p = graph::get_relationship_source(r, relationship);
+            REQUIRE_VALID(p);
+            CHECK(p.value() == static_cast<entt::entity>(0));
+        }
+        {
+            auto p = graph::get_relationship_target(r, relationship);
+            REQUIRE_VALID(p);
+            CHECK(p.value() == static_cast<entt::entity>(1));
+        }
     }
 
     SECTION("duplicate") {
@@ -270,6 +292,21 @@ TEST_CASE("add_relationship good") {
         REQUIRE_VALID(relationship_ret);
         const auto relationship = relationship_ret.value();
 
+        {
+            auto p = graph::get_relationship_type(r, relationship);
+            REQUIRE_VALID(p);
+            CHECK(p.value() == "needs"sv);
+        }
+        {
+            auto p = graph::get_relationship_source(r, relationship);
+            REQUIRE_VALID(p);
+            CHECK(p.value() == static_cast<entt::entity>(2));
+        }
+        {
+            auto p = graph::get_relationship_target(r, relationship);
+            REQUIRE_VALID(p);
+            CHECK(p.value() == static_cast<entt::entity>(0));
+        }
         {
             auto p = graph::get_relationship_property(r, relationship, "priority"sv);
             REQUIRE_VALID(p);
