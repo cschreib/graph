@@ -5,9 +5,10 @@
 
 using namespace nlohmann::literals;
 using namespace std::literals;
+using graph::json;
 
 namespace snitch {
-bool append(small_string_span ss, const nlohmann::json& j) noexcept {
+bool append(small_string_span ss, const json& j) noexcept {
     return append(ss, j.dump());
 }
 } // namespace snitch
@@ -31,7 +32,7 @@ bool append(small_string_span ss, const nlohmann::json& j) noexcept {
 
 namespace {
 // clang-format off
-const nlohmann::json test_schema =
+const json test_schema =
 R"({
     "nodes": {
         "customer": {
@@ -76,7 +77,7 @@ R"({
     }
 })"_json;
 
-const nlohmann::json test_node_requirement =
+const json test_node_requirement =
 R"({
     "type": "requirement",
     "properties": {
@@ -86,7 +87,7 @@ R"({
     }
 })"_json;
 
-const nlohmann::json test_node_risk =
+const json test_node_risk =
 R"({
     "type": "risk",
     "properties": {
@@ -98,7 +99,7 @@ R"({
     }
 })"_json;
 
-const nlohmann::json test_node_customer1 =
+const json test_node_customer1 =
 R"({
     "type": "customer",
     "properties": {
@@ -107,7 +108,7 @@ R"({
     }
 })"_json;
 
-const nlohmann::json test_node_customer2 =
+const json test_node_customer2 =
 R"({
     "type": "customer",
     "properties": {
@@ -116,14 +117,14 @@ R"({
     }
 })"_json;
 
-const nlohmann::json test_relationship_mitigates =
+const json test_relationship_mitigates =
 R"({
     "type": "mitigates",
     "source": "0",
     "target": "1"
 })"_json;
 
-const nlohmann::json test_relationship_needs =
+const json test_relationship_needs =
 R"({
     "type": "needs",
     "source": "2",
@@ -136,12 +137,12 @@ R"({
 } // namespace
 
 TEST_CASE("schema load/dump good") {
-    const nlohmann::json data_in = test_schema;
+    const json data_in = test_schema;
 
     entt::registry r;
     graph::load_schema(r, data_in);
 
-    const nlohmann::json data_out = graph::dump_schema(r);
+    const json data_out = graph::dump_schema(r);
 
     CHECK(data_in == data_out);
 }

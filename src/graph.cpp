@@ -16,6 +16,8 @@ constexpr std::size_t max_schema_relationships            = 32;
 constexpr std::size_t max_string_id_length                = 32;
 constexpr std::size_t max_in_place_string_property_length = 128;
 
+using graph::json;
+
 using hash_data_t = std::uint64_t;
 enum class hash_t : hash_data_t {};
 
@@ -66,7 +68,7 @@ struct string_property {
     }
 };
 
-void to_json(nlohmann::json& j, const string_property& s) {
+void to_json(json& j, const string_property& s) {
     std::visit(
         [&](const auto& v) {
             if constexpr (std::is_same_v<std::decay_t<decltype(v)>, std::string>) {
@@ -143,14 +145,14 @@ hashed_string add_hash(hash_t base_hash, std::string_view element) noexcept {
 }
 
 template<typename Item>
-schema_property& load_schema_property(
-    Item& r, std::string_view node_name, std::string_view name, const nlohmann::json& data) {
+schema_property&
+load_schema_property(Item& r, std::string_view node_name, std::string_view name, const json& data) {
     return r.properties.push_back(
         {.name = add_hash(node_name, name), .type = add_hash(data.get<std::string>())});
 }
 
 template<typename Storage>
-auto& load_schema_item(Storage& r, std::string_view name, const nlohmann::json& data) {
+auto& load_schema_item(Storage& r, std::string_view name, const json& data) {
     typename Storage::value_type item{.type = add_hash(name)};
     if (data.contains("properties"sv)) {
         for (const auto& [k, v] : data["properties"sv].items()) {
@@ -163,7 +165,7 @@ auto& load_schema_item(Storage& r, std::string_view name, const nlohmann::json& 
 
 template<typename Storage>
 std::expected<std::reference_wrapper<typename Storage::value_type>, std::string_view>
-load_schema_relationship(Storage& r, std::string_view name, const nlohmann::json& data) {
+load_schema_relationship(Storage& r, std::string_view name, const json& data) {
 
     if (!data.contains("source"sv)) {
         return std::unexpected("missing source"sv);
@@ -298,7 +300,7 @@ const schema_property& get_property_schema(const Item& n, hash_t name) noexcept 
 }
 
 std::expected<void, std::string_view>
-check_property_schema(const schema_property& schema, const nlohmann::json& p) noexcept {
+check_property_schema(const schema_property& schema, const json& p) noexcept {
     switch (schema.type.hash) {
     case "string"_h64: {
         if (!p.is_string()) {
@@ -332,7 +334,7 @@ check_property_schema(const schema_property& schema, const nlohmann::json& p) no
 
 template<typename Schema>
 std::expected<void, std::string_view> check_item_property_schema(
-    const entt::registry& r, const Schema& schema, const nlohmann::json& item) noexcept {
+    const entt::registry& r, const Schema& schema, const json& item) noexcept {
     graph::small_vector<bool, max_properties> found;
     found.resize(schema.properties.size());
 
@@ -370,7 +372,7 @@ struct validated_node {
 };
 
 std::expected<validated_node, std::string_view>
-check_node_schema(const entt::registry& r, const nlohmann::json& node) noexcept {
+check_node_schema(const entt::registry& r, const json& node) noexcept {
     if (!node.contains("type"sv)) {
         return std::unexpected("missing node type"sv);
     }
@@ -395,7 +397,7 @@ struct validated_relationship {
 };
 
 std::expected<validated_relationship, std::string_view>
-check_relationship_schema(const entt::registry& r, const nlohmann::json& relationship) noexcept {
+check_relationship_schema(const entt::registry& r, const json& relationship) noexcept {
     if (!relationship.contains("type"sv)) {
         return std::unexpected("missing relationship type"sv);
     }
@@ -463,7 +465,7 @@ check_relationship_schema(const entt::registry& r, const nlohmann::json& relatio
 
 template<typename Validated>
 void add_properties(
-    entt::registry& r, entt::entity e, const Validated& validated, const nlohmann::json& data) {
+    entt::registry& r, entt::entity e, const Validated& validated, const json& data) {
 
     if (!data.contains("properties"sv)) {
         return;
@@ -477,11 +479,11 @@ void add_properties(
 }
 
 template<typename Item>
-nlohmann::json save_schema_item(const Item& n) {
-    nlohmann::json data(nlohmann::json::value_t::object);
+json save_schema_item(const Item& n) {
+    json data(json::value_t::object);
 
     if (!n.properties.empty()) {
-        nlohmann::json properties(nlohmann::json::value_t::object);
+        json properties(json::value_t::object);
         for (const auto& p : n.properties) {
             properties[p.name.str()] = p.type.str();
         }
@@ -492,10 +494,10 @@ nlohmann::json save_schema_item(const Item& n) {
     return data;
 }
 
-nlohmann::json save_schema_relationship(const schema_relationship& l) {
-    nlohmann::json data = save_schema_item(l);
-    data["source"sv]    = l.source.str();
-    data["target"sv]    = l.target.str();
+json save_schema_relationship(const schema_relationship& l) {
+    json data        = save_schema_item(l);
+    data["source"sv] = l.source.str();
+    data["target"sv] = l.target.str();
 
     return data;
 }
@@ -528,7 +530,7 @@ void add_property(entt::registry& r, entt::entity e, hash_t name_hash, const Sto
 }
 
 void add_property(
-    entt::registry& r, entt::entity e, const schema_property& schema, const nlohmann::json& value) {
+    entt::registry& r, entt::entity e, const schema_property& schema, const json& value) {
 
     switch (schema.type.hash) {
     case "string"_h64: {
@@ -581,7 +583,7 @@ property_type get_property(const entt::registry& r, entt::entity e, const schema
 }
 
 template<typename Schema>
-std::expected<nlohmann::json, std::string_view> get_property(
+std::expected<json, std::string_view> get_property(
     const entt::registry& r, entt::entity item, const Schema& schema, std::string_view property) {
 
     const auto  property_hash   = hash(schema.type.hash, property);
@@ -591,18 +593,17 @@ std::expected<nlohmann::json, std::string_view> get_property(
     }
 
     const auto p = get_property(r, item, *property_schema);
-    return std::visit([](const auto& pv) { return nlohmann::json(pv); }, p);
+    return std::visit([](const auto& pv) { return json(pv); }, p);
 }
 
 template<typename Schema>
-std::expected<nlohmann::json, std::string_view>
+std::expected<json, std::string_view>
 get_properties(const entt::registry& r, entt::entity item, const Schema& schema) {
-    nlohmann::json data(nlohmann::json::value_t::object);
+    json data(json::value_t::object);
 
     for (const auto& property_schema : schema.properties) {
         const auto p = get_property(r, item, property_schema);
-        std::visit(
-            [&](const auto& pv) { data[property_schema.name.str()] = nlohmann::json(pv); }, p);
+        std::visit([&](const auto& pv) { data[property_schema.name.str()] = json(pv); }, p);
     }
 
     return data;
@@ -630,7 +631,7 @@ std::expected<entt::entity, std::string_view> id_from_string(std::string_view s)
     return static_cast<entt::entity>(i);
 }
 
-std::expected<void, std::string_view> load_schema(entt::registry& r, const nlohmann::json& data) {
+std::expected<void, std::string_view> load_schema(entt::registry& r, const json& data) {
     if (r.alive() > 0) {
         return std::unexpected(
             "cannot load a new schema in a registry that already contains entities"sv);
@@ -663,13 +664,13 @@ std::expected<void, std::string_view> load_schema(entt::registry& r, const nlohm
     return {};
 }
 
-nlohmann::json dump_schema(const entt::registry& r) {
+json dump_schema(const entt::registry& r) {
     const auto& schema = r.ctx().get<schema_graph>();
 
-    nlohmann::json data(nlohmann::json::value_t::object);
+    json data(json::value_t::object);
 
     {
-        nlohmann::json nodes(nlohmann::json::value_t::object);
+        json nodes(json::value_t::object);
         for (const auto& n : schema.nodes) {
             nodes[n.type.str()] = save_schema_item(n);
         }
@@ -678,7 +679,7 @@ nlohmann::json dump_schema(const entt::registry& r) {
     }
 
     {
-        nlohmann::json relationships(nlohmann::json::value_t::object);
+        json relationships(json::value_t::object);
         for (const auto& l : schema.relationships) {
             relationships[l.type.str()] = save_schema_relationship(l);
         }
@@ -689,8 +690,8 @@ nlohmann::json dump_schema(const entt::registry& r) {
     return data;
 }
 
-std::expected<void, std::string_view> load_nodes(entt::registry& r, const nlohmann::json& nodes) {
-    if (nodes.type() != nlohmann::json::value_t::object) {
+std::expected<void, std::string_view> load_nodes(entt::registry& r, const json& nodes) {
+    if (nodes.type() != json::value_t::object) {
         return std::unexpected("nodes must be an object");
     }
 
@@ -709,15 +710,15 @@ std::expected<void, std::string_view> load_nodes(entt::registry& r, const nlohma
     return {};
 }
 
-nlohmann::json dump_nodes(const entt::registry& r) {
+json dump_nodes(const entt::registry& r) {
     const auto& graph_schema = r.ctx().get<schema_graph>();
 
-    nlohmann::json data(nlohmann::json::value_t::object);
+    json data(json::value_t::object);
 
     for (const auto& node_schema : graph_schema.nodes) {
         auto view = view_nodes(r, node_schema.type.hash);
         for (auto e : view) {
-            nlohmann::json node(nlohmann::json::value_t::object);
+            json node(json::value_t::object);
             node["type"sv] = node_schema.type.str();
             if (!node_schema.properties.empty()) {
                 node["properties"sv] = get_node_properties(r, e).value();
@@ -730,8 +731,8 @@ nlohmann::json dump_nodes(const entt::registry& r) {
 }
 
 std::expected<void, std::string_view>
-load_relationships(entt::registry& r, const nlohmann::json& relationships) {
-    if (relationships.type() != nlohmann::json::value_t::object) {
+load_relationships(entt::registry& r, const json& relationships) {
+    if (relationships.type() != json::value_t::object) {
         return std::unexpected("relationships must be an object");
     }
 
@@ -750,17 +751,17 @@ load_relationships(entt::registry& r, const nlohmann::json& relationships) {
     return {};
 }
 
-nlohmann::json dump_relationships(const entt::registry& r) {
+json dump_relationships(const entt::registry& r) {
     const auto& graph_schema = r.ctx().get<schema_graph>();
 
-    nlohmann::json data(nlohmann::json::value_t::object);
+    json data(json::value_t::object);
 
     for (const auto& relationship_schema : graph_schema.relationships) {
         auto view = view_relationships(r, relationship_schema.type.hash);
         for (auto e : view) {
             const auto& rs = view.get<relationship_base>(e);
 
-            nlohmann::json relationship(nlohmann::json::value_t::object);
+            json relationship(json::value_t::object);
             relationship["type"sv]   = relationship_schema.type.str();
             relationship["source"sv] = id_to_string(rs.source);
             relationship["target"sv] = id_to_string(rs.target);
@@ -774,7 +775,7 @@ nlohmann::json dump_relationships(const entt::registry& r) {
     return data;
 }
 
-std::expected<void, std::string_view> load(entt::registry& r, const nlohmann::json& data) {
+std::expected<void, std::string_view> load(entt::registry& r, const json& data) {
     if (!data.contains("schema"sv)) {
         return std::unexpected("missing schema"sv);
     }
@@ -803,16 +804,15 @@ std::expected<void, std::string_view> load(entt::registry& r, const nlohmann::js
     return {};
 }
 
-nlohmann::json dump(const entt::registry& r) {
-    nlohmann::json data(nlohmann::json::value_t::object);
+json dump(const entt::registry& r) {
+    json data(json::value_t::object);
     data["schema"sv]        = dump_schema(r);
     data["nodes"sv]         = dump_nodes(r);
     data["relationships"sv] = dump_relationships(r);
     return data;
 }
 
-std::expected<entt::entity, std::string_view>
-add_node(entt::registry& r, const nlohmann::json& node) {
+std::expected<entt::entity, std::string_view> add_node(entt::registry& r, const json& node) {
     // Validate against schema.
     const auto validated_chk = check_node_schema(r, node);
     if (!validated_chk) {
@@ -841,7 +841,7 @@ add_node(entt::registry& r, const nlohmann::json& node) {
 }
 
 std::expected<entt::entity, std::string_view>
-add_node(entt::registry& r, entt::entity e, const nlohmann::json& node) {
+add_node(entt::registry& r, entt::entity e, const json& node) {
     // Validate against schema.
     const auto validated_chk = check_node_schema(r, node);
     if (!validated_chk) {
@@ -874,7 +874,7 @@ add_node(entt::registry& r, entt::entity e, const nlohmann::json& node) {
 }
 
 std::expected<entt::entity, std::string_view>
-add_relationship(entt::registry& r, const nlohmann::json& relationship) {
+add_relationship(entt::registry& r, const json& relationship) {
     // Validate against schema.
     const auto validated_chk = check_relationship_schema(r, relationship);
     if (!validated_chk) {
@@ -905,7 +905,7 @@ add_relationship(entt::registry& r, const nlohmann::json& relationship) {
 }
 
 std::expected<entt::entity, std::string_view>
-add_relationship(entt::registry& r, entt::entity e, const nlohmann::json& relationship) {
+add_relationship(entt::registry& r, entt::entity e, const json& relationship) {
     // Validate against schema.
     const auto validated_chk = check_relationship_schema(r, relationship);
     if (!validated_chk) {
@@ -979,7 +979,7 @@ get_relationship_source(const entt::registry& r, entt::entity relationship) {
     return relationship_props_chk.value().get().source;
 }
 
-std::expected<nlohmann::json, std::string_view>
+std::expected<json, std::string_view>
 get_node_property(const entt::registry& r, entt::entity node, std::string_view property) {
     const auto node_schema_chk = get_node_schema(r, node);
     if (!node_schema_chk) {
@@ -989,7 +989,7 @@ get_node_property(const entt::registry& r, entt::entity node, std::string_view p
     return get_property(r, node, node_schema_chk.value().get(), property);
 }
 
-std::expected<nlohmann::json, std::string_view> get_relationship_property(
+std::expected<json, std::string_view> get_relationship_property(
     const entt::registry& r, entt::entity relationship, std::string_view property) {
     const auto relationship_schema_chk = get_relationship_schema(r, relationship);
     if (!relationship_schema_chk) {
@@ -999,7 +999,7 @@ std::expected<nlohmann::json, std::string_view> get_relationship_property(
     return get_property(r, relationship, relationship_schema_chk.value().get(), property);
 }
 
-std::expected<nlohmann::json, std::string_view>
+std::expected<json, std::string_view>
 get_node_properties(const entt::registry& r, entt::entity node) {
     const auto node_schema_chk = get_node_schema(r, node);
     if (!node_schema_chk) {
@@ -1009,7 +1009,7 @@ get_node_properties(const entt::registry& r, entt::entity node) {
     return get_properties(r, node, node_schema_chk.value().get());
 }
 
-std::expected<nlohmann::json, std::string_view>
+std::expected<json, std::string_view>
 get_relationship_properties(const entt::registry& r, entt::entity relationship) {
     const auto relationship_schema_chk = get_relationship_schema(r, relationship);
     if (!relationship_schema_chk) {
@@ -1019,7 +1019,7 @@ get_relationship_properties(const entt::registry& r, entt::entity relationship) 
     return get_properties(r, relationship, relationship_schema_chk.value().get());
 }
 
-std::expected<nlohmann::json, std::string_view>
+std::expected<json, std::string_view>
 get_node_relationships(const entt::registry& r, entt::entity node) {
     const auto node_schema_chk = get_node_schema(r, node);
     if (!node_schema_chk) {
@@ -1029,7 +1029,7 @@ get_node_relationships(const entt::registry& r, entt::entity node) {
     const auto& node_schema  = node_schema_chk.value().get();
     const auto& graph_schema = r.ctx().get<schema_graph>();
 
-    nlohmann::json data(nlohmann::json::value_t::array);
+    json data(json::value_t::array);
 
     for (const auto& relationship_schema : graph_schema.relationships) {
         if (relationship_schema.source.hash != node_schema.type.hash &&
@@ -1049,7 +1049,7 @@ get_node_relationships(const entt::registry& r, entt::entity node) {
     return data;
 }
 
-std::expected<nlohmann::json, std::string_view>
+std::expected<json, std::string_view>
 get_node_relationships(const entt::registry& r, entt::entity node, std::string_view type) {
     const auto node_schema_chk = get_node_schema(r, node);
     if (!node_schema_chk) {
@@ -1067,7 +1067,7 @@ get_node_relationships(const entt::registry& r, entt::entity node, std::string_v
         return std::unexpected("this node cannot have this relationship"sv);
     }
 
-    nlohmann::json data(nlohmann::json::value_t::array);
+    json data(json::value_t::array);
 
     auto view = view_relationships(r, relationship_schema->type.hash);
     for (auto relationship : view) {
