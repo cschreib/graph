@@ -47,11 +47,11 @@ For best data locality and fast access, the schema is encoded in binary format i
  - the max number of property per node/relationship (16)
  - the max length of a node/relationship type string (32)
 
+These default values can be changed in [`src/graph.cpp`](src/graph.cpp).
+
 Note however that this applies only to the schema. The database itself does not have similar restriction, in particular the following is only limited by the available RAM:
  - the number of nodes
  - the number of relationships
  - the number of relationships for a given node
-
-These default values can be changed in [`src/graph.cpp`](src/graph.cpp).
 
 Each property of a given type is encoded in a separate pool. E.g., if we have two types "T1" and "T2" each with properties "P1" and "P2", then "T1/P1", "T1/P2", "T2/P1", "T2/P2" are all stored in separate pools (even if the property shares the same name and type as a property of a different type). Pools are allocated for the data type specified in the schema, with no overhead except for strings. Strings can be stored on the heap, although we store small strings (smaller than 128 characters) in-place in the pool. Better performance could be obtained by adding new string types of fixed length (e.g., `"string64"` for a 64-character-long string), which are not allowed to migrate to the heap if too long.
