@@ -15,8 +15,37 @@ constexpr std::size_t max_schema_links                    = 32;
 constexpr std::size_t max_string_id_length                = 32;
 constexpr std::size_t max_in_place_string_property_length = 128;
 
+using hash_data_t = std::uint64_t;
+enum class hash_t : hash_data_t {};
+
+constexpr hash_data_t hash_offset = 14695981039346656037ull;
+constexpr hash_data_t hash_prime  = 1099511628211ull;
+
+template<typename T>
+[[nodiscard]] constexpr hash_t
+hash_buffer(hash_t hash_in, const T* data, std::size_t length) noexcept {
+    static_assert(sizeof(T) == 1);
+
+    hash_data_t hash = static_cast<hash_data_t>(hash_in);
+
+    for (std::size_t i = 0; i < length; ++i) {
+        hash = (hash ^ static_cast<hash_data_t>(data[i])) * hash_prime;
+    }
+
+    return static_cast<hash_t>(hash);
+}
+
+template<typename T>
+[[nodiscard]] constexpr hash_t hash_buffer(const T* data, std::size_t length) noexcept {
+    return hash_buffer(static_cast<hash_t>(hash_offset), data, length);
+}
+
+[[nodiscard]] constexpr hash_t operator"" _h64(const char* str, std::size_t len) noexcept {
+    return hash_buffer(str, len);
+}
+
 struct hashed_string {
-    entt::id_type                             hash{};
+    hash_t                                    hash{};
     graph::small_string<max_string_id_length> str{};
 };
 
@@ -33,11 +62,11 @@ struct string_property {
 };
 
 struct node_type {
-    entt::id_type type{};
+    hash_t type{};
 };
 
 struct link_type {
-    entt::id_type type{};
+    hash_t type{};
 };
 
 struct schema_property {
@@ -62,18 +91,41 @@ struct schema_graph {
     graph::small_vector<schema_link, max_schema_links> links{};
 };
 
-entt::id_type hash(std::string_view s) noexcept {
-    return entt::hashed_string::value(s.data(), s.size());
+hash_t hash(std::string_view s) noexcept {
+    return hash_buffer(s.data(), s.size());
+}
+
+hash_t hash(std::string_view s1, std::string_view s2) noexcept {
+    auto h = hash_buffer(s1.data(), s1.size());
+    h      = hash_buffer(h, "|", 1u);
+    h      = hash_buffer(h, s2.data(), s2.size());
+    return h;
+}
+
+hash_t hash(hash_t h1, std::string_view s2) noexcept {
+    auto h = h1;
+    h      = hash_buffer(h, "|", 1u);
+    h      = hash_buffer(h, s2.data(), s2.size());
+    return h;
 }
 
 hashed_string add_hash(std::string_view s) noexcept {
     return hashed_string{.hash = hash(s), .str = s};
 }
 
+hashed_string add_hash(std::string_view base, std::string_view element) noexcept {
+    return hashed_string{.hash = hash(base, element), .str = element};
+}
+
+hashed_string add_hash(hash_t base_hash, std::string_view element) noexcept {
+    return hashed_string{.hash = hash(base_hash, element), .str = element};
+}
+
 template<typename Item>
-schema_property& load_schema_property(Item& r, std::string_view name, const nlohmann::json& data) {
+schema_property& load_schema_property(
+    Item& r, std::string_view node_name, std::string_view name, const nlohmann::json& data) {
     return r.properties.push_back(
-        {.name = add_hash(name), .type = add_hash(data.get<std::string>())});
+        {.name = add_hash(node_name, name), .type = add_hash(data.get<std::string>())});
 }
 
 template<typename Storage>
@@ -85,7 +137,7 @@ auto& load_schema_item(Storage& r, std::string_view name, const nlohmann::json& 
                 continue;
             }
 
-            load_schema_property(item, k, v);
+            load_schema_property(item, name, k, v);
         }
     }
 
@@ -110,11 +162,11 @@ auto& load_schema_link(Storage& r, std::string_view name, const nlohmann::json& 
 }
 
 struct type_less {
-    static entt::id_type get_type(const auto& n) noexcept {
+    static hash_t get_type(const auto& n) noexcept {
         return n.type.hash;
     }
 
-    static entt::id_type get_type(entt::id_type s) noexcept {
+    static hash_t get_type(hash_t s) noexcept {
         return s;
     }
 
@@ -123,7 +175,7 @@ struct type_less {
     }
 };
 
-const schema_node* get_node_schema(const entt::registry& r, entt::id_type type) noexcept {
+const schema_node* try_get_node_schema(const entt::registry& r, hash_t type) noexcept {
     const auto& schema = r.ctx().get<schema_graph>();
     auto iter = std::lower_bound(schema.nodes.begin(), schema.nodes.end(), type, type_less{});
     if (iter == schema.nodes.end() || iter->type.hash != type) {
@@ -133,7 +185,16 @@ const schema_node* get_node_schema(const entt::registry& r, entt::id_type type) 
     return &*iter;
 }
 
-const schema_link* get_link_schema(const entt::registry& r, entt::id_type type) noexcept {
+const schema_node& get_node_schema(const entt::registry& r, hash_t type) noexcept {
+    const auto* schema = try_get_node_schema(r, type);
+    if (schema == nullptr) {
+        graph::terminate_with("unknown node type"sv);
+    }
+
+    return *schema;
+}
+
+const schema_link* try_get_link_schema(const entt::registry& r, hash_t type) noexcept {
     const auto& schema = r.ctx().get<schema_graph>();
     auto iter = std::lower_bound(schema.links.begin(), schema.links.end(), type, type_less{});
     if (iter == schema.links.end() || iter->type.hash != type) {
@@ -143,8 +204,17 @@ const schema_link* get_link_schema(const entt::registry& r, entt::id_type type) 
     return &*iter;
 }
 
+const schema_link& get_link_schema(const entt::registry& r, hash_t type) noexcept {
+    const auto* schema = try_get_link_schema(r, type);
+    if (schema == nullptr) {
+        graph::terminate_with("unknown link type"sv);
+    }
+
+    return *schema;
+}
+
 template<typename Item>
-const schema_property* get_property_schema(const Item& n, entt::id_type name) noexcept {
+const schema_property* try_get_property_schema(const Item& n, hash_t name) noexcept {
     auto iter =
         std::find_if(n.properties.begin(), n.properties.end(), [&](const schema_property& p) {
             return p.name.hash == name;
@@ -157,28 +227,38 @@ const schema_property* get_property_schema(const Item& n, entt::id_type name) no
     return &*iter;
 }
 
+template<typename Item>
+const schema_property& get_property_schema(const Item& n, hash_t name) noexcept {
+    const auto* schema = try_get_property_schema(n, name);
+    if (schema == nullptr) {
+        graph::terminate_with("unknown property"sv);
+    }
+
+    return *schema;
+}
+
 std::expected<void, std::string_view>
 check_property_schema(const schema_property& schema, const nlohmann::json& p) noexcept {
     switch (schema.type.hash) {
-    case "string"_hs: {
+    case "string"_h64: {
         if (!p.is_string()) {
             return std::unexpected("expected string value"sv);
         }
         break;
     }
-    case "integer"_hs: {
+    case "integer"_h64: {
         if (!p.is_number_integer()) {
             return std::unexpected("expected integer value"sv);
         }
         break;
     }
-    case "float"_hs: {
+    case "float"_h64: {
         if (!p.is_number_float()) {
             return std::unexpected("expected float value"sv);
         }
         break;
     }
-    case "bool"_hs: {
+    case "bool"_h64: {
         if (!p.is_boolean()) {
             return std::unexpected("expected boolean value"sv);
         }
@@ -191,7 +271,7 @@ check_property_schema(const schema_property& schema, const nlohmann::json& p) no
 }
 
 struct validated_node {
-    entt::id_type      type;
+    hash_t             type;
     const schema_node& schema;
 };
 
@@ -201,9 +281,8 @@ check_node_schema(const entt::registry& r, const nlohmann::json& node) noexcept 
         return std::unexpected("missing node type");
     }
 
-    const auto type = hash(node["type"sv].get<std::string>());
-
-    const auto* node_schema = get_node_schema(r, type);
+    const auto  type        = hash(node["type"sv].get<std::string>());
+    const auto* node_schema = try_get_node_schema(r, type);
     if (node_schema == nullptr) {
         return std::unexpected("unknown node type"sv);
     }
@@ -213,7 +292,7 @@ check_node_schema(const entt::registry& r, const nlohmann::json& node) noexcept 
 
     if (node.contains("properties"sv)) {
         for (const auto& [k, v] : node["properties"sv].items()) {
-            const auto* property_schema = get_property_schema(*node_schema, hash(k));
+            const auto* property_schema = try_get_property_schema(*node_schema, hash(type, k));
             if (property_schema == nullptr) {
                 return std::unexpected("unknown property"sv);
             }
@@ -263,9 +342,9 @@ nlohmann::json save_schema_link(const schema_link& l) {
 }
 
 template<typename StorageType>
-void add_property(
-    entt::registry& r, entt::entity e, entt::id_type name_hash, const StorageType& value) {
-    auto& s = r.storage<StorageType>(name_hash);
+void add_property(entt::registry& r, entt::entity e, hash_t name_hash, const StorageType& value) {
+    static_assert(sizeof(entt::id_type) == sizeof(hash_data_t));
+    auto& s = r.storage<StorageType>(static_cast<entt::id_type>(name_hash));
     s.emplace(e, value);
 }
 
@@ -273,29 +352,30 @@ void add_property(
     entt::registry&        r,
     entt::entity           e,
     const schema_property& schema,
-    entt::id_type          name_hash,
+    hash_t                 name_hash,
     const nlohmann::json&  value) {
 
     switch (schema.type.hash) {
-    case "string"_hs: {
+    case "string"_h64: {
         add_property(r, e, name_hash, string_property(value.get<std::string>()));
         break;
     }
-    case "integer"_hs: {
+    case "integer"_h64: {
         add_property(r, e, name_hash, value.get<std::int64_t>());
         break;
     }
-    case "float"_hs: {
+    case "float"_h64: {
         add_property(r, e, name_hash, value.get<double>());
         break;
     }
-    case "bool"_hs: {
+    case "bool"_h64: {
         add_property(r, e, name_hash, value.get<bool>());
         break;
     }
     default: graph::terminate_with("unsupported type");
     }
 }
+
 } // namespace
 
 namespace graph {
@@ -367,9 +447,9 @@ add_node(entt::registry& r, const nlohmann::json& node) {
         r.emplace<node_type>(e, node_type{.type = validated.type});
 
         for (const auto& [k, v] : node["properties"].items()) {
-            const auto  name_hash       = hash(k);
-            const auto* property_schema = get_property_schema(validated.schema, name_hash);
-            add_property(r, e, *property_schema, name_hash, v);
+            const auto  name_hash       = hash(validated.type, k);
+            const auto& property_schema = get_property_schema(validated.schema, name_hash);
+            add_property(r, e, property_schema, name_hash, v);
         }
     } catch (...) {
         if (e != entt::null) {

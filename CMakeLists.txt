@@ -30,6 +30,7 @@ add_library(graph
 
 add_library(graph::graph ALIAS graph)
 set_target_properties(graph PROPERTIES EXPORT_NAME graph::graph)
+target_compile_options(graph PUBLIC -DENTT_ID_TYPE=std::uint64_t)
 
 target_compile_features(graph PUBLIC cxx_std_23)
 target_include_directories(graph PUBLIC
