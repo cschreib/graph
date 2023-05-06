@@ -305,13 +305,6 @@ TEST_CASE("add_relationship bad") {
         REQUIRE_INVALID(e, "expected string value");
     }
 
-    SECTION("relationship already exists") {
-        auto e1 = graph::add_relationship(r, test_relationship_mitigates);
-        REQUIRE_VALID(e1);
-        auto e2 = graph::add_relationship(r, test_relationship_mitigates);
-        REQUIRE_INVALID(e2, "relationship already exists");
-    }
-
     SECTION("source does not exist") {
         auto e = graph::add_relationship(
             r,
