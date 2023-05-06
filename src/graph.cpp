@@ -9,14 +9,27 @@ using namespace entt::literals;
 using namespace std::literals;
 
 namespace {
-constexpr std::size_t max_properties       = 16;
-constexpr std::size_t max_schema_nodes     = 32;
-constexpr std::size_t max_schema_links     = 32;
-constexpr std::size_t max_string_id_length = 32;
+constexpr std::size_t max_properties                      = 16;
+constexpr std::size_t max_schema_nodes                    = 32;
+constexpr std::size_t max_schema_links                    = 32;
+constexpr std::size_t max_string_id_length                = 32;
+constexpr std::size_t max_in_place_string_property_length = 128;
 
 struct hashed_string {
     entt::id_type                             hash{};
     graph::small_string<max_string_id_length> str{};
+};
+
+struct string_property {
+    std::variant<graph::small_string<max_in_place_string_property_length>, std::string> value;
+
+    explicit string_property(std::string_view s) {
+        if (s.size() <= max_in_place_string_property_length) {
+            value.emplace<graph::small_string<max_in_place_string_property_length>>(s);
+        } else {
+            value.emplace<std::string>(s);
+        }
+    }
 };
 
 struct node_type {
@@ -44,7 +57,7 @@ struct schema_link {
     graph::small_vector<schema_property, max_properties> properties{};
 };
 
-struct schema {
+struct schema_graph {
     graph::small_vector<schema_node, max_schema_nodes> nodes{};
     graph::small_vector<schema_link, max_schema_links> links{};
 };
@@ -111,9 +124,9 @@ struct type_less {
 };
 
 const schema_node* get_node_schema(const entt::registry& r, entt::id_type type) noexcept {
-    const auto& s    = r.ctx().get<schema>();
-    auto        iter = std::lower_bound(s.nodes.begin(), s.nodes.end(), type, type_less{});
-    if (iter == s.nodes.end() || iter->type.hash != type) {
+    const auto& schema = r.ctx().get<schema_graph>();
+    auto iter = std::lower_bound(schema.nodes.begin(), schema.nodes.end(), type, type_less{});
+    if (iter == schema.nodes.end() || iter->type.hash != type) {
         return nullptr;
     }
 
@@ -121,9 +134,9 @@ const schema_node* get_node_schema(const entt::registry& r, entt::id_type type) 
 }
 
 const schema_link* get_link_schema(const entt::registry& r, entt::id_type type) noexcept {
-    const auto& s    = r.ctx().get<schema>();
-    auto        iter = std::lower_bound(s.links.begin(), s.links.end(), type, type_less{});
-    if (iter == s.links.end() || iter->type.hash != type) {
+    const auto& schema = r.ctx().get<schema_graph>();
+    auto iter = std::lower_bound(schema.links.begin(), schema.links.end(), type, type_less{});
+    if (iter == schema.links.end() || iter->type.hash != type) {
         return nullptr;
     }
 
@@ -145,8 +158,8 @@ const schema_property* get_property_schema(const Item& n, entt::id_type name) no
 }
 
 std::expected<void, std::string_view>
-check_property_schema(const schema_property& s, const nlohmann::json& p) noexcept {
-    switch (s.type.hash) {
+check_property_schema(const schema_property& schema, const nlohmann::json& p) noexcept {
+    switch (schema.type.hash) {
     case "string"_hs: {
         if (!p.is_string()) {
             return std::unexpected("expected string value"sv);
@@ -171,12 +184,18 @@ check_property_schema(const schema_property& s, const nlohmann::json& p) noexcep
         }
         break;
     }
+    default: graph::terminate_with("unsupported type");
     }
 
     return {};
 }
 
-std::expected<entt::id_type, std::string_view>
+struct validated_node {
+    entt::id_type      type;
+    const schema_node& schema;
+};
+
+std::expected<validated_node, std::string_view>
 check_node_schema(const entt::registry& r, const nlohmann::json& node) noexcept {
     if (!node.contains("type"sv)) {
         return std::unexpected("missing node type");
@@ -216,7 +235,7 @@ check_node_schema(const entt::registry& r, const nlohmann::json& node) noexcept 
         return std::unexpected("missing property");
     }
 
-    return type;
+    return validated_node{.type = type, .schema = *node_schema};
 }
 
 template<typename Item>
@@ -242,40 +261,75 @@ nlohmann::json save_schema_link(const schema_link& l) {
 
     return data;
 }
+
+template<typename StorageType>
+void add_property(
+    entt::registry& r, entt::entity e, entt::id_type name_hash, const StorageType& value) {
+    auto& s = r.storage<StorageType>(name_hash);
+    s.emplace(e, value);
+}
+
+void add_property(
+    entt::registry&        r,
+    entt::entity           e,
+    const schema_property& schema,
+    entt::id_type          name_hash,
+    const nlohmann::json&  value) {
+
+    switch (schema.type.hash) {
+    case "string"_hs: {
+        add_property(r, e, name_hash, string_property(value.get<std::string>()));
+        break;
+    }
+    case "integer"_hs: {
+        add_property(r, e, name_hash, value.get<std::int64_t>());
+        break;
+    }
+    case "float"_hs: {
+        add_property(r, e, name_hash, value.get<double>());
+        break;
+    }
+    case "bool"_hs: {
+        add_property(r, e, name_hash, value.get<bool>());
+        break;
+    }
+    default: graph::terminate_with("unsupported type");
+    }
+}
 } // namespace
 
 namespace graph {
 void load_schema(entt::registry& r, const nlohmann::json& data) {
-    schema s;
+    schema_graph schema;
 
     if (data.contains("nodes"sv)) {
         for (const auto& [k, v] : data["nodes"sv].items()) {
-            load_schema_item(s.nodes, k, v);
+            load_schema_item(schema.nodes, k, v);
         }
 
-        std::sort(s.nodes.begin(), s.nodes.end(), type_less{});
+        std::sort(schema.nodes.begin(), schema.nodes.end(), type_less{});
     }
 
     if (data.contains("links"sv)) {
         for (const auto& [k, v] : data["links"sv].items()) {
-            load_schema_link(s.links, k, v);
+            load_schema_link(schema.links, k, v);
         }
 
-        std::sort(s.links.begin(), s.links.end(), type_less{});
+        std::sort(schema.links.begin(), schema.links.end(), type_less{});
     }
 
-    r.ctx().erase<schema>();
-    r.ctx().emplace<schema>(std::move(s));
+    r.ctx().erase<schema_graph>();
+    r.ctx().emplace<schema_graph>(std::move(schema));
 }
 
 nlohmann::json save_schema(const entt::registry& r) {
-    const auto& s = r.ctx().get<schema>();
+    const auto& schema = r.ctx().get<schema_graph>();
 
     nlohmann::json data(nlohmann::json::value_t::object);
 
     {
         nlohmann::json nodes(nlohmann::json::value_t::object);
-        for (const auto& n : s.nodes) {
+        for (const auto& n : schema.nodes) {
             nodes[n.type.str.str()] = save_schema_item(n);
         }
 
@@ -284,7 +338,7 @@ nlohmann::json save_schema(const entt::registry& r) {
 
     {
         nlohmann::json links(nlohmann::json::value_t::object);
-        for (const auto& l : s.links) {
+        for (const auto& l : schema.links) {
             links[l.type.str.str()] = save_schema_link(l);
         }
 
@@ -297,10 +351,12 @@ nlohmann::json save_schema(const entt::registry& r) {
 std::expected<entt::entity, std::string_view>
 add_node(entt::registry& r, const nlohmann::json& node) {
     // Validate against schema.
-    auto type = check_node_schema(r, node);
-    if (!type) {
-        return std::unexpected(type.error());
+    const auto validated_chk = check_node_schema(r, node);
+    if (!validated_chk) {
+        return std::unexpected(validated_chk.error());
     }
+
+    const auto& validated = validated_chk.value();
 
     // From now on, parsing success is guaranteed, we can commit the data.
     // Exceptions may still be thrown when out-of-memory, or entity cap reached.
@@ -308,14 +364,12 @@ add_node(entt::registry& r, const nlohmann::json& node) {
     entt::entity e = entt::null;
     try {
         e = r.create();
-        r.emplace<node_type>(e, node_type{.type = type.value()});
+        r.emplace<node_type>(e, node_type{.type = validated.type});
 
         for (const auto& [k, v] : node["properties"].items()) {
-            // TODO: Add new node
-            // switch (v.type()) {
-            // }
-            // auto& s = r.storage<T>(hash(k));
-            // s.emplace(e, ...);
+            const auto  name_hash       = hash(k);
+            const auto* property_schema = get_property_schema(validated.schema, name_hash);
+            add_property(r, e, *property_schema, name_hash, v);
         }
     } catch (...) {
         if (e != entt::null) {
