@@ -56,6 +56,10 @@ expected<json> get_node_relationships(const registry& r, entity node);
 
 expected<json> get_node_relationships(const registry& r, entity node, std::string_view type);
 
+expected<json> get_nodes(const registry& r, std::string_view type);
+
+expected<json> get_relationships(const registry& r, std::string_view type);
+
 expected<void> delete_node(registry& r, entity node);
 
 expected<void> delete_relationship(registry& r, entity relationship);

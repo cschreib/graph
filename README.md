@@ -21,5 +21,7 @@ This implementation includes the following:
  - Functions are available to add:
    - A new node
    - A new relationship
- - No function is currently available to edit nodes and relationships, or to list all nodes or relationships of a given type. There is nothing fundamental preventing this, just lack of time.
+ - No function is currently available to edit nodes and relationships (only through delete and add). There is nothing fundamental preventing this, just lack of time.
  - There was a plan to implement a REST API on top of this using [Crow](https://github.com/CrowCpp/Crow), but this was not started.
+
+The public API is in [`include/graph/graph.hpp`](include/graph/graph.hpp).

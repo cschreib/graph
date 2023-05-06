@@ -610,6 +610,34 @@ expected<json> get_properties(const registry& r, entity item, const Schema& sche
 
     return data;
 }
+
+void dump_nodes(const registry& r, const schema_node& schema, json& data) {
+    auto view = view_nodes(r, schema.type.hash);
+    for (auto e : view) {
+        json node(json::value_t::object);
+        node["type"sv] = schema.type.str();
+        if (!schema.properties.empty()) {
+            node["properties"sv] = graph::get_node_properties(r, e).value();
+        }
+        data[graph::id_to_string(e).str()] = std::move(node);
+    }
+}
+
+void dump_relationships(const registry& r, const schema_relationship& schema, json& data) {
+    auto view = view_relationships(r, schema.type.hash);
+    for (auto e : view) {
+        const auto& rs = view.get<relationship_base>(e);
+
+        json relationship(json::value_t::object);
+        relationship["type"sv]   = schema.type.str();
+        relationship["source"sv] = graph::id_to_string(rs.source);
+        relationship["target"sv] = graph::id_to_string(rs.target);
+        if (!schema.properties.empty()) {
+            relationship["properties"sv] = graph::get_relationship_properties(r, e).value();
+        }
+        data[graph::id_to_string(e).str()] = std::move(relationship);
+    }
+}
 } // namespace
 
 namespace graph {
@@ -716,17 +744,8 @@ json dump_nodes(const registry& r) {
     const auto& graph_schema = r.ctx().get<schema_graph>();
 
     json data(json::value_t::object);
-
     for (const auto& node_schema : graph_schema.nodes) {
-        auto view = view_nodes(r, node_schema.type.hash);
-        for (auto e : view) {
-            json node(json::value_t::object);
-            node["type"sv] = node_schema.type.str();
-            if (!node_schema.properties.empty()) {
-                node["properties"sv] = get_node_properties(r, e).value();
-            }
-            data[id_to_string(e).str()] = std::move(node);
-        }
+        dump_nodes(r, node_schema, data);
     }
 
     return data;
@@ -758,19 +777,7 @@ json dump_relationships(const registry& r) {
     json data(json::value_t::object);
 
     for (const auto& relationship_schema : graph_schema.relationships) {
-        auto view = view_relationships(r, relationship_schema.type.hash);
-        for (auto e : view) {
-            const auto& rs = view.get<relationship_base>(e);
-
-            json relationship(json::value_t::object);
-            relationship["type"sv]   = relationship_schema.type.str();
-            relationship["source"sv] = id_to_string(rs.source);
-            relationship["target"sv] = id_to_string(rs.target);
-            if (!relationship_schema.properties.empty()) {
-                relationship["properties"sv] = get_relationship_properties(r, e).value();
-            }
-            data[id_to_string(e).str()] = std::move(relationship);
-        }
+        dump_relationships(r, relationship_schema, data);
     }
 
     return data;
@@ -1056,6 +1063,28 @@ expected<json> get_node_relationships(const registry& r, entity node, std::strin
         }
     }
 
+    return data;
+}
+
+expected<json> get_nodes(const registry& r, std::string_view type) {
+    const auto* schema = try_get_node_schema(r, hash(type));
+    if (schema == nullptr) {
+        graph::terminate_with("unknown node type"sv);
+    }
+
+    json data(json::value_t::object);
+    dump_nodes(r, *schema, data);
+    return data;
+}
+
+expected<json> get_relationships(const registry& r, std::string_view type) {
+    const auto* schema = try_get_relationship_schema(r, hash(type));
+    if (schema == nullptr) {
+        graph::terminate_with("unknown relationship type"sv);
+    }
+
+    json data(json::value_t::object);
+    dump_relationships(r, *schema, data);
     return data;
 }
 

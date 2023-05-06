@@ -584,3 +584,55 @@ TEST_CASE("delete relationship") {
     auto t = graph::get_relationship_type(r, static_cast<entity>(4));
     REQUIRE_INVALID(t, "relationship does not exist");
 }
+
+TEST_CASE("get nodes") {
+    registry r;
+    graph::load_schema(r, test_schema);
+    add_test_relationships(r);
+
+    SECTION("no node") {
+        graph::delete_node(r, static_cast<entity>(0));
+
+        auto res = graph::get_nodes(r, "requirement"sv);
+        REQUIRE_VALID(res);
+        REQUIRE(res.value().empty());
+    }
+
+    SECTION("single node") {
+        auto res = graph::get_nodes(r, "requirement"sv);
+        REQUIRE_VALID(res);
+        REQUIRE(res.value().contains("0"sv));
+        CHECK(res.value()["0"sv] == test_node_requirement);
+    }
+
+    SECTION("multiple nodes") {
+        auto res = graph::get_nodes(r, "customer"sv);
+        REQUIRE_VALID(res);
+        REQUIRE(res.value().contains("2"sv));
+        REQUIRE(res.value().contains("3"sv));
+        CHECK(res.value()["2"sv] == test_node_customer1);
+        CHECK(res.value()["3"sv] == test_node_customer2);
+    }
+}
+
+TEST_CASE("get relationships") {
+    registry r;
+    graph::load_schema(r, test_schema);
+    add_test_relationships(r);
+
+    SECTION("single relationships") {
+        auto res = graph::get_relationships(r, "needs"sv);
+        REQUIRE_VALID(res);
+        REQUIRE(res.value().contains("6"sv));
+        CHECK(res.value()["6"sv] == test_relationship_needs);
+    }
+
+    SECTION("multiple relationships") {
+        auto res = graph::get_relationships(r, "mitigates"sv);
+        REQUIRE_VALID(res);
+        REQUIRE(res.value().contains("4"sv));
+        REQUIRE(res.value().contains("5"sv));
+        CHECK(res.value()["4"sv] == test_relationship_mitigates);
+        CHECK(res.value()["5"sv] == test_relationship_mitigates);
+    }
+}
