@@ -1,4 +1,4 @@
-# graph
+# graph :shrug:
 
 Proof of concept for implementing a graph database using [EnTT](https://github.com/skypjack/entt) for storage. The motivation was to have a simple and lightweight implementation, meant for smallish databases.
 
