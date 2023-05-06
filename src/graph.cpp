@@ -61,6 +61,20 @@ struct string_property {
     }
 };
 
+void to_json(nlohmann::json& j, const string_property& s) {
+    std::visit(
+        [&](const auto& v) {
+            if constexpr (std::is_same_v<std::decay_t<decltype(v)>, std::string>) {
+                j = v;
+            } else {
+                j = v.str();
+            }
+        },
+        s.value);
+}
+
+using property_type = std::variant<bool, std::int64_t, double, string_property>;
+
 struct node_type {
     hash_t type{};
 };
@@ -349,27 +363,54 @@ void add_property(entt::registry& r, entt::entity e, hash_t name_hash, const Sto
 }
 
 void add_property(
-    entt::registry&        r,
-    entt::entity           e,
-    const schema_property& schema,
-    hash_t                 name_hash,
-    const nlohmann::json&  value) {
+    entt::registry& r, entt::entity e, const schema_property& schema, const nlohmann::json& value) {
 
     switch (schema.type.hash) {
     case "string"_h64: {
-        add_property(r, e, name_hash, string_property(value.get<std::string>()));
+        add_property(r, e, schema.name.hash, string_property(value.get<std::string>()));
         break;
     }
     case "integer"_h64: {
-        add_property(r, e, name_hash, value.get<std::int64_t>());
+        add_property(r, e, schema.name.hash, value.get<std::int64_t>());
         break;
     }
     case "float"_h64: {
-        add_property(r, e, name_hash, value.get<double>());
+        add_property(r, e, schema.name.hash, value.get<double>());
         break;
     }
     case "bool"_h64: {
-        add_property(r, e, name_hash, value.get<bool>());
+        add_property(r, e, schema.name.hash, value.get<bool>());
+        break;
+    }
+    default: graph::terminate_with("unsupported type");
+    }
+}
+
+template<typename StorageType>
+std::expected<property_type, std::string_view>
+get_property(const entt::registry& r, entt::entity e, hash_t name_hash) {
+    static_assert(sizeof(entt::id_type) == sizeof(hash_data_t));
+    const auto& s = r.storage<StorageType>(static_cast<entt::id_type>(name_hash));
+    return s.get(e);
+}
+
+std::expected<property_type, std::string_view>
+get_property(const entt::registry& r, entt::entity e, const schema_property& schema) {
+    switch (schema.type.hash) {
+    case "string"_h64: {
+        return get_property<string_property>(r, e, schema.name.hash);
+        break;
+    }
+    case "integer"_h64: {
+        return get_property<std::int64_t>(r, e, schema.name.hash);
+        break;
+    }
+    case "float"_h64: {
+        return get_property<double>(r, e, schema.name.hash);
+        break;
+    }
+    case "bool"_h64: {
+        return get_property<bool>(r, e, schema.name.hash);
         break;
     }
     default: graph::terminate_with("unsupported type");
@@ -449,7 +490,7 @@ add_node(entt::registry& r, const nlohmann::json& node) {
         for (const auto& [k, v] : node["properties"].items()) {
             const auto  name_hash       = hash(validated.type, k);
             const auto& property_schema = get_property_schema(validated.schema, name_hash);
-            add_property(r, e, property_schema, name_hash, v);
+            add_property(r, e, property_schema, v);
         }
     } catch (...) {
         if (e != entt::null) {
@@ -459,5 +500,28 @@ add_node(entt::registry& r, const nlohmann::json& node) {
     }
 
     return e;
+}
+
+std::expected<nlohmann::json, std::string_view>
+get_node_property(const entt::registry& r, entt::entity node, std::string_view property) {
+    if (!r.valid(node)) {
+        return std::unexpected("node does not exist"sv);
+    }
+
+    const auto  type        = r.get<node_type>(node).type;
+    const auto& node_schema = get_node_schema(r, type);
+
+    const auto  property_hash   = hash(type, property);
+    const auto* property_schema = try_get_property_schema(node_schema, property_hash);
+    if (!property_schema) {
+        return std::unexpected("unknown property"sv);
+    }
+
+    const auto p = get_property(r, node, *property_schema);
+    if (!p) {
+        return std::unexpected(p.error());
+    }
+
+    return std::visit([](const auto& pv) { return nlohmann::json(pv); }, p.value());
 }
 } // namespace graph

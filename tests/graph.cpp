@@ -3,12 +3,21 @@
 #include <snitch/snitch.hpp>
 
 using namespace nlohmann::literals;
+using namespace std::literals;
 
 namespace snitch {
 bool append(small_string_span ss, const nlohmann::json& j) noexcept {
     return append(ss, j.dump());
 }
 } // namespace snitch
+
+#define REQUIRE_VALID(RET)                                                                         \
+    do {                                                                                           \
+        if (!(RET).has_value()) {                                                                  \
+            FAIL_CHECK((RET).error());                                                             \
+            FAIL(#RET " was not valid");                                                           \
+        }                                                                                          \
+    } while (0)
 
 namespace {
 // clang-format off
@@ -130,14 +139,33 @@ TEST_CASE("node load good") {
     entt::registry r;
     graph::load_schema(r, test_schema);
 
-    auto e = graph::add_node(r, R"({
+    const auto node_ret = graph::add_node(r, R"({
         "type": "requirement",
         "properties": {
             "id": "R1",
             "title": "Nodes checked against schema",
-            "description": "Nodes in the database are checked a schema, to ensure integrity."
+            "description": "Nodes in the database are checked against a schema, to ensure integrity. Nodes that do not conform to the schema cannot be added to the database."
         }
     })"_json);
 
-    REQUIRE(e.has_value());
+    REQUIRE_VALID(node_ret);
+    const auto node = node_ret.value();
+
+    {
+        auto p = graph::get_node_property(r, node, "id"sv);
+        REQUIRE_VALID(p);
+        CHECK(p.value().get<std::string>() == "R1"sv);
+    }
+    {
+        auto p = graph::get_node_property(r, node, "title"sv);
+        REQUIRE_VALID(p);
+        CHECK(p.value().get<std::string>() == "Nodes checked against schema"sv);
+    }
+    {
+        auto p = graph::get_node_property(r, node, "description"sv);
+        REQUIRE_VALID(p);
+        CHECK(
+            p.value().get<std::string>() ==
+            "Nodes in the database are checked against a schema, to ensure integrity. Nodes that do not conform to the schema cannot be added to the database."sv);
+    }
 }
