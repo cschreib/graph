@@ -408,6 +408,21 @@ check_relationship_schema(const entt::registry& r, const nlohmann::json& relatio
         .type = schema->type.hash, .source = source, .target = target, .schema = *schema};
 }
 
+template<typename Validated>
+void add_properties(
+    entt::registry& r, entt::entity e, const Validated& validated, const nlohmann::json& data) {
+
+    if (!data.contains("properties"sv)) {
+        return;
+    }
+
+    for (const auto& [k, v] : data["properties"sv].items()) {
+        const auto  name_hash       = hash(validated.type, k);
+        const auto& property_schema = get_property_schema(validated.schema, name_hash);
+        add_property(r, e, property_schema, v);
+    }
+}
+
 template<typename Item>
 nlohmann::json save_schema_item(const Item& n) {
     nlohmann::json data(nlohmann::json::value_t::object);
@@ -494,6 +509,23 @@ get_property(const entt::registry& r, entt::entity e, const schema_property& sch
     }
 }
 
+template<typename Schema>
+std::expected<nlohmann::json, std::string_view> get_property(
+    const entt::registry& r, entt::entity item, const Schema& schema, std::string_view property) {
+
+    const auto  property_hash   = hash(schema.type.hash, property);
+    const auto* property_schema = try_get_property_schema(schema, property_hash);
+    if (!property_schema) {
+        return std::unexpected("unknown property"sv);
+    }
+
+    const auto p = get_property(r, item, *property_schema);
+    if (!p) {
+        return std::unexpected(p.error());
+    }
+
+    return std::visit([](const auto& pv) { return nlohmann::json(pv); }, p.value());
+}
 } // namespace
 
 namespace graph {
@@ -563,14 +595,7 @@ add_node(entt::registry& r, const nlohmann::json& node) {
     try {
         e = r.create();
         r.emplace<node_base>(e, node_base{.type = validated.type});
-
-        if (node.contains("properties"sv)) {
-            for (const auto& [k, v] : node["properties"sv].items()) {
-                const auto  name_hash       = hash(validated.type, k);
-                const auto& property_schema = get_property_schema(validated.schema, name_hash);
-                add_property(r, e, property_schema, v);
-            }
-        }
+        add_properties(r, e, validated, node);
     } catch (...) {
         if (e != entt::null) {
             r.destroy(e);
@@ -597,18 +622,10 @@ add_relationship(entt::registry& r, const nlohmann::json& relationship) {
     entt::entity e = entt::null;
     try {
         e = r.create();
-
         r.emplace<relationship_base>(
             e, relationship_base{
                    .type = validated.type, .source = validated.source, .target = validated.target});
-
-        if (relationship.contains("properties"sv)) {
-            for (const auto& [k, v] : relationship["properties"sv].items()) {
-                const auto  name_hash       = hash(validated.type, k);
-                const auto& property_schema = get_property_schema(validated.schema, name_hash);
-                add_property(r, e, property_schema, v);
-            }
-        }
+        add_properties(r, e, validated, relationship);
     } catch (...) {
         if (e != entt::null) {
             r.destroy(e);
@@ -625,21 +642,31 @@ get_node_property(const entt::registry& r, entt::entity node, std::string_view p
         return std::unexpected("node does not exist"sv);
     }
 
-    const auto  type        = r.get<node_base>(node).type;
+    const auto* node_props = r.try_get<node_base>(node);
+    if (node_props == nullptr) {
+        return std::unexpected("not a node");
+    }
+
+    const auto  type        = node_props->type;
     const auto& node_schema = get_node_schema(r, type);
 
-    const auto  property_hash   = hash(type, property);
-    const auto* property_schema = try_get_property_schema(node_schema, property_hash);
-    if (!property_schema) {
-        return std::unexpected("unknown property"sv);
-    }
-
-    const auto p = get_property(r, node, *property_schema);
-    if (!p) {
-        return std::unexpected(p.error());
-    }
-
-    return std::visit([](const auto& pv) { return nlohmann::json(pv); }, p.value());
+    return get_property(r, node, node_schema, property);
 }
 
+std::expected<nlohmann::json, std::string_view> get_relationship_property(
+    const entt::registry& r, entt::entity relationship, std::string_view property) {
+    if (!r.valid(relationship)) {
+        return std::unexpected("relationship does not exist"sv);
+    }
+
+    const auto* relationship_props = r.try_get<relationship_base>(relationship);
+    if (relationship_props == nullptr) {
+        return std::unexpected("not a relationship");
+    }
+
+    const auto  type                = relationship_props->type;
+    const auto& relationship_schema = get_relationship_schema(r, type);
+
+    return get_property(r, relationship, relationship_schema, property);
+}
 } // namespace graph

@@ -234,13 +234,28 @@ TEST_CASE("add_relationship good") {
     SECTION("no properties") {
         const auto relationship_ret = graph::add_relationship(r, test_relationship_mitigates);
         REQUIRE_VALID(relationship_ret);
-        // const auto relationship = relationship_ret.value();
+    }
+
+    SECTION("duplicate") {
+        const auto r1 = graph::add_relationship(r, test_relationship_mitigates);
+        REQUIRE_VALID(r1);
+        const auto r2 = graph::add_relationship(r, test_relationship_mitigates);
+        REQUIRE_VALID(r2);
+        CHECK(r1.value() != r2.value());
+        CHECK(r.valid(r1.value()));
+        CHECK(r.valid(r2.value()));
     }
 
     SECTION("with properties") {
         const auto relationship_ret = graph::add_relationship(r, test_relationship_needs);
         REQUIRE_VALID(relationship_ret);
-        // const auto relationship = relationship_ret.value();
+        const auto relationship = relationship_ret.value();
+
+        {
+            auto p = graph::get_relationship_property(r, relationship, "priority"sv);
+            REQUIRE_VALID(p);
+            CHECK(p.value().get<std::string>() == "MUST"sv);
+        }
     }
 }
 
