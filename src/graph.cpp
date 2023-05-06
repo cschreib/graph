@@ -11,7 +11,7 @@ using namespace std::literals;
 namespace {
 constexpr std::size_t max_properties                      = 16;
 constexpr std::size_t max_schema_nodes                    = 32;
-constexpr std::size_t max_schema_links                    = 32;
+constexpr std::size_t max_schema_relationships            = 32;
 constexpr std::size_t max_string_id_length                = 32;
 constexpr std::size_t max_in_place_string_property_length = 128;
 
@@ -79,7 +79,7 @@ struct node_type {
     hash_t type{};
 };
 
-struct link_type {
+struct relationship_type {
     hash_t type{};
 };
 
@@ -93,7 +93,7 @@ struct schema_node {
     graph::small_vector<schema_property, max_properties> properties{};
 };
 
-struct schema_link {
+struct schema_relationship {
     hashed_string                                        type{};
     hashed_string                                        source{};
     hashed_string                                        target{};
@@ -101,8 +101,8 @@ struct schema_link {
 };
 
 struct schema_graph {
-    graph::small_vector<schema_node, max_schema_nodes> nodes{};
-    graph::small_vector<schema_link, max_schema_links> links{};
+    graph::small_vector<schema_node, max_schema_nodes>                 nodes{};
+    graph::small_vector<schema_relationship, max_schema_relationships> relationships{};
 };
 
 hash_t hash(std::string_view s) noexcept {
@@ -159,7 +159,7 @@ auto& load_schema_item(Storage& r, std::string_view name, const nlohmann::json& 
 }
 
 template<typename Storage>
-auto& load_schema_link(Storage& r, std::string_view name, const nlohmann::json& data) {
+auto& load_schema_relationship(Storage& r, std::string_view name, const nlohmann::json& data) {
     if (!data.contains("source"sv)) {
         throw std::runtime_error("missing 'source' element");
     }
@@ -208,20 +208,22 @@ const schema_node& get_node_schema(const entt::registry& r, hash_t type) noexcep
     return *schema;
 }
 
-const schema_link* try_get_link_schema(const entt::registry& r, hash_t type) noexcept {
+const schema_relationship*
+try_get_relationship_schema(const entt::registry& r, hash_t type) noexcept {
     const auto& schema = r.ctx().get<schema_graph>();
-    auto iter = std::lower_bound(schema.links.begin(), schema.links.end(), type, type_less{});
-    if (iter == schema.links.end() || iter->type.hash != type) {
+    auto        iter   = std::lower_bound(
+        schema.relationships.begin(), schema.relationships.end(), type, type_less{});
+    if (iter == schema.relationships.end() || iter->type.hash != type) {
         return nullptr;
     }
 
     return &*iter;
 }
 
-const schema_link& get_link_schema(const entt::registry& r, hash_t type) noexcept {
-    const auto* schema = try_get_link_schema(r, type);
+const schema_relationship& get_relationship_schema(const entt::registry& r, hash_t type) noexcept {
+    const auto* schema = try_get_relationship_schema(r, type);
     if (schema == nullptr) {
-        graph::terminate_with("unknown link type"sv);
+        graph::terminate_with("unknown relationship type"sv);
     }
 
     return *schema;
@@ -347,7 +349,7 @@ nlohmann::json save_schema_item(const Item& n) {
     return data;
 }
 
-nlohmann::json save_schema_link(const schema_link& l) {
+nlohmann::json save_schema_relationship(const schema_relationship& l) {
     nlohmann::json data = save_schema_item(l);
     data["source"sv]    = l.source.str.str();
     data["target"sv]    = l.target.str.str();
@@ -431,12 +433,12 @@ void load_schema(entt::registry& r, const nlohmann::json& data) {
         std::sort(schema.nodes.begin(), schema.nodes.end(), type_less{});
     }
 
-    if (data.contains("links"sv)) {
-        for (const auto& [k, v] : data["links"sv].items()) {
-            load_schema_link(schema.links, k, v);
+    if (data.contains("relationships"sv)) {
+        for (const auto& [k, v] : data["relationships"sv].items()) {
+            load_schema_relationship(schema.relationships, k, v);
         }
 
-        std::sort(schema.links.begin(), schema.links.end(), type_less{});
+        std::sort(schema.relationships.begin(), schema.relationships.end(), type_less{});
     }
 
     r.ctx().erase<schema_graph>();
@@ -458,12 +460,12 @@ nlohmann::json save_schema(const entt::registry& r) {
     }
 
     {
-        nlohmann::json links(nlohmann::json::value_t::object);
-        for (const auto& l : schema.links) {
-            links[l.type.str.str()] = save_schema_link(l);
+        nlohmann::json relationships(nlohmann::json::value_t::object);
+        for (const auto& l : schema.relationships) {
+            relationships[l.type.str.str()] = save_schema_relationship(l);
         }
 
-        data["links"sv] = std::move(links);
+        data["relationships"sv] = std::move(relationships);
     }
 
     return data;

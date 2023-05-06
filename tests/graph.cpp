@@ -47,7 +47,7 @@ R"({
             }
         }
     },
-    "links": {
+    "relationships": {
         "mitigates": {
             "source": "requirement",
             "target": "risk"
