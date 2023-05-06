@@ -161,6 +161,15 @@ TEST_CASE("add_node good") {
             p.value().get<std::string>() ==
             "Nodes in the database are checked against a schema, to ensure integrity. Nodes that do not conform to the schema cannot be added to the database."sv);
     }
+    {
+        auto p = graph::get_node_properties(r, node);
+        REQUIRE_VALID(p);
+        CHECK(p.value() == R"({
+            "id": "Req.1",
+            "title": "Nodes checked against schema",
+            "description": "Nodes in the database are checked against a schema, to ensure integrity. Nodes that do not conform to the schema cannot be added to the database."
+        })"_json);
+    }
 }
 
 TEST_CASE("add_node bad") {
@@ -255,6 +264,13 @@ TEST_CASE("add_relationship good") {
             auto p = graph::get_relationship_property(r, relationship, "priority"sv);
             REQUIRE_VALID(p);
             CHECK(p.value().get<std::string>() == "MUST"sv);
+        }
+        {
+            auto p = graph::get_relationship_properties(r, relationship);
+            REQUIRE_VALID(p);
+            CHECK(p.value() == R"({
+                "priority": "MUST"
+            })"_json);
         }
     }
 }

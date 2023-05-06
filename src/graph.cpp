@@ -509,15 +509,13 @@ void add_property(
 }
 
 template<typename StorageType>
-std::expected<property_type, std::string_view>
-get_property(const entt::registry& r, entt::entity e, hash_t name_hash) {
+property_type get_property(const entt::registry& r, entt::entity e, hash_t name_hash) {
     static_assert(sizeof(entt::id_type) == sizeof(hash_data_t));
     const auto& s = r.storage<StorageType>(static_cast<entt::id_type>(name_hash));
     return s.get(e);
 }
 
-std::expected<property_type, std::string_view>
-get_property(const entt::registry& r, entt::entity e, const schema_property& schema) {
+property_type get_property(const entt::registry& r, entt::entity e, const schema_property& schema) {
     switch (schema.type.hash) {
     case "string"_h64: {
         return get_property<string_property>(r, e, schema.name.hash);
@@ -550,11 +548,21 @@ std::expected<nlohmann::json, std::string_view> get_property(
     }
 
     const auto p = get_property(r, item, *property_schema);
-    if (!p) {
-        return std::unexpected(p.error());
+    return std::visit([](const auto& pv) { return nlohmann::json(pv); }, p);
+}
+
+template<typename Schema>
+std::expected<nlohmann::json, std::string_view>
+get_properties(const entt::registry& r, entt::entity item, const Schema& schema) {
+    nlohmann::json data(nlohmann::json::value_t::object);
+
+    for (const auto& property_schema : schema.properties) {
+        const auto p = get_property(r, item, property_schema);
+        std::visit(
+            [&](const auto& pv) { data[property_schema.name.str.str()] = nlohmann::json(pv); }, p);
     }
 
-    return std::visit([](const auto& pv) { return nlohmann::json(pv); }, p.value());
+    return data;
 }
 } // namespace
 
@@ -684,5 +692,25 @@ std::expected<nlohmann::json, std::string_view> get_relationship_property(
     }
 
     return get_property(r, relationship, relationship_schema_chk.value().get(), property);
+}
+
+std::expected<nlohmann::json, std::string_view>
+get_node_properties(const entt::registry& r, entt::entity node) {
+    const auto node_schema_chk = get_node_schema(r, node);
+    if (!node_schema_chk) {
+        return std::unexpected(node_schema_chk.error());
+    }
+
+    return get_properties(r, node, node_schema_chk.value().get());
+}
+
+std::expected<nlohmann::json, std::string_view>
+get_relationship_properties(const entt::registry& r, entt::entity relationship) {
+    const auto relationship_schema_chk = get_relationship_schema(r, relationship);
+    if (!relationship_schema_chk) {
+        return std::unexpected(relationship_schema_chk.error());
+    }
+
+    return get_properties(r, relationship, relationship_schema_chk.value().get());
 }
 } // namespace graph

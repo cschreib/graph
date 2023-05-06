@@ -22,4 +22,10 @@ get_node_property(const entt::registry& r, entt::entity node, std::string_view p
 
 std::expected<nlohmann::json, std::string_view> get_relationship_property(
     const entt::registry& r, entt::entity relationship, std::string_view property);
+
+std::expected<nlohmann::json, std::string_view>
+get_node_properties(const entt::registry& r, entt::entity node);
+
+std::expected<nlohmann::json, std::string_view>
+get_relationship_properties(const entt::registry& r, entt::entity node);
 } // namespace graph
