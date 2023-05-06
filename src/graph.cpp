@@ -162,12 +162,14 @@ auto& load_schema_item(Storage& r, std::string_view name, const nlohmann::json& 
 }
 
 template<typename Storage>
-auto& load_schema_relationship(Storage& r, std::string_view name, const nlohmann::json& data) {
+std::expected<std::reference_wrapper<typename Storage::value_type>, std::string_view>
+load_schema_relationship(Storage& r, std::string_view name, const nlohmann::json& data) {
+
     if (!data.contains("source"sv)) {
-        throw std::runtime_error("missing source");
+        return std::unexpected("missing source"sv);
     }
     if (!data.contains("target"sv)) {
-        throw std::runtime_error("missing target");
+        return std::unexpected("missing target"sv);
     }
 
     auto& l = load_schema_item(r, name, data);
@@ -630,7 +632,7 @@ std::expected<entt::entity, std::string_view> id_from_string(std::string_view s)
 
 std::expected<void, std::string_view> load_schema(entt::registry& r, const nlohmann::json& data) {
     if (r.alive() > 0) {
-        graph::terminate_with(
+        return std::unexpected(
             "cannot load a new schema in a registry that already contains entities"sv);
     }
 
@@ -639,7 +641,6 @@ std::expected<void, std::string_view> load_schema(entt::registry& r, const nlohm
     if (data.contains("nodes"sv)) {
         for (const auto& [k, v] : data["nodes"sv].items()) {
             load_schema_item(schema.nodes, k, v);
-            // TODO: move this to use std::expected
         }
 
         std::sort(schema.nodes.begin(), schema.nodes.end(), type_less{});
@@ -647,8 +648,10 @@ std::expected<void, std::string_view> load_schema(entt::registry& r, const nlohm
 
     if (data.contains("relationships"sv)) {
         for (const auto& [k, v] : data["relationships"sv].items()) {
-            load_schema_relationship(schema.relationships, k, v);
-            // TODO: move this to use std::expected
+            auto res = load_schema_relationship(schema.relationships, k, v);
+            if (!res) {
+                return std::unexpected(res.error());
+            }
         }
 
         std::sort(schema.relationships.begin(), schema.relationships.end(), type_less{});
