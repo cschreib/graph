@@ -217,12 +217,17 @@ const schema_node& get_node_schema(const registry& r, hash_t type) noexcept {
     return *schema;
 }
 
-expected<std::reference_wrapper<const node_base>> get_node_props(const registry& r, entity node) {
+template<typename U, typename V>
+using copy_const = std::conditional_t<std::is_const_v<U>, const V, V>;
+
+template<typename Registry>
+expected<std::reference_wrapper<copy_const<Registry, node_base>>>
+get_node_props(Registry& r, entity node) {
     if (!r.valid(node)) {
         return std::unexpected("node does not exist"sv);
     }
 
-    const auto* node_props = r.try_get<node_base>(node);
+    auto* node_props = r.template try_get<node_base>(node);
     if (node_props == nullptr) {
         return std::unexpected("not a node"sv);
     }
@@ -261,13 +266,14 @@ const schema_relationship& get_relationship_schema(const registry& r, hash_t typ
     return *schema;
 }
 
-expected<std::reference_wrapper<const relationship_base>>
-get_relationship_props(const registry& r, entity relationship) {
+template<typename Registry>
+expected<std::reference_wrapper<copy_const<Registry, relationship_base>>>
+get_relationship_props(Registry& r, entity relationship) {
     if (!r.valid(relationship)) {
         return std::unexpected("relationship does not exist"sv);
     }
 
-    const auto* relationship_props = r.try_get<relationship_base>(relationship);
+    auto* relationship_props = r.template try_get<relationship_base>(relationship);
     if (relationship_props == nullptr) {
         return std::unexpected("not a relationship"sv);
     }
@@ -471,19 +477,6 @@ check_relationship_schema(const registry& r, const json& relationship) noexcept 
         .schema = *schema};
 }
 
-template<typename Validated>
-void add_properties(registry& r, entity e, const Validated& validated, const json& data) {
-    if (!data.contains("properties"sv)) {
-        return;
-    }
-
-    for (const auto& [k, v] : data["properties"sv].items()) {
-        const auto  name_hash       = hash(validated.type, k);
-        const auto& property_schema = get_property_schema(validated.schema, name_hash);
-        add_property(r, e, property_schema, v);
-    }
-}
-
 template<typename Item>
 json save_schema_item(const Item& n) {
     json data(json::value_t::object);
@@ -532,7 +525,11 @@ template<typename StorageType>
 void add_property(registry& r, entity e, hash_t name_hash, const StorageType& value) {
     static_assert(sizeof(entt::id_type) == sizeof(hash_data_t));
     auto& s = r.storage<StorageType>(static_cast<entt::id_type>(name_hash));
-    s.emplace(e, value);
+    if (s.contains(e)) {
+        s.patch(e, [&](auto& v) { v = value; });
+    } else {
+        s.emplace(e, value);
+    }
 }
 
 void add_property(registry& r, entity e, const schema_property& schema, const json& value) {
@@ -554,6 +551,19 @@ void add_property(registry& r, entity e, const schema_property& schema, const js
         break;
     }
     default: graph::terminate_with("unsupported type"sv);
+    }
+}
+
+template<typename Validated>
+void add_properties(registry& r, entity e, const Validated& validated, const json& data) {
+    if (!data.contains("properties"sv)) {
+        return;
+    }
+
+    for (const auto& [k, v] : data["properties"sv].items()) {
+        const auto  name_hash       = hash(validated.type, k);
+        const auto& property_schema = get_property_schema(validated.schema, name_hash);
+        add_property(r, e, property_schema, v);
     }
 }
 
@@ -600,7 +610,7 @@ get_property(const registry& r, entity item, const Schema& schema, std::string_v
 }
 
 template<typename Schema>
-expected<json> get_properties(const registry& r, entity item, const Schema& schema) {
+json get_properties(const registry& r, entity item, const Schema& schema) {
     json data(json::value_t::object);
 
     for (const auto& property_schema : schema.properties) {
@@ -611,31 +621,40 @@ expected<json> get_properties(const registry& r, entity item, const Schema& sche
     return data;
 }
 
+json dump_node(const registry& r, const schema_node& schema, entity e) {
+    json node(json::value_t::object);
+    node["type"sv] = schema.type.str();
+    if (!schema.properties.empty()) {
+        node["properties"sv] = get_properties(r, e, schema);
+    }
+    return node;
+}
+
 void dump_nodes(const registry& r, const schema_node& schema, json& data) {
     auto view = view_nodes(r, schema.type.hash);
     for (auto e : view) {
-        json node(json::value_t::object);
-        node["type"sv] = schema.type.str();
-        if (!schema.properties.empty()) {
-            node["properties"sv] = graph::get_node_properties(r, e).value();
-        }
-        data[graph::id_to_string(e).str()] = std::move(node);
+        data[graph::id_to_string(e).str()] = dump_node(r, schema, e);
     }
+}
+
+json dump_relationship(
+    const registry& r, const schema_relationship& schema, const relationship_base& rs, entity e) {
+
+    json relationship(json::value_t::object);
+    relationship["type"sv]   = schema.type.str();
+    relationship["source"sv] = graph::id_to_string(rs.source);
+    relationship["target"sv] = graph::id_to_string(rs.target);
+    if (!schema.properties.empty()) {
+        relationship["properties"sv] = get_properties(r, e, schema);
+    }
+    return relationship;
 }
 
 void dump_relationships(const registry& r, const schema_relationship& schema, json& data) {
     auto view = view_relationships(r, schema.type.hash);
     for (auto e : view) {
-        const auto& rs = view.get<relationship_base>(e);
-
-        json relationship(json::value_t::object);
-        relationship["type"sv]   = schema.type.str();
-        relationship["source"sv] = graph::id_to_string(rs.source);
-        relationship["target"sv] = graph::id_to_string(rs.target);
-        if (!schema.properties.empty()) {
-            relationship["properties"sv] = graph::get_relationship_properties(r, e).value();
-        }
-        data[graph::id_to_string(e).str()] = std::move(relationship);
+        const auto& rs                     = view.get<relationship_base>(e);
+        data[graph::id_to_string(e).str()] = dump_relationship(r, schema, rs, e);
     }
 }
 } // namespace
@@ -845,7 +864,7 @@ expected<entity> add_node(registry& r, const json& node) {
     return e;
 }
 
-expected<entity> add_node(registry& r, entity e, const json& node) {
+expected<void> add_node(registry& r, entity e, const json& node) {
     // Validate against schema.
     const auto validated_chk = check_node_schema(r, node);
     if (!validated_chk) {
@@ -872,7 +891,33 @@ expected<entity> add_node(registry& r, entity e, const json& node) {
         throw;
     }
 
-    return e;
+    return {};
+}
+
+expected<void> replace_node(registry& r, entity e, const json& node) {
+    // Validate against schema.
+    const auto validated_chk = check_node_schema(r, node);
+    if (!validated_chk) {
+        return std::unexpected(validated_chk.error());
+    }
+
+    const auto& validated = validated_chk.value();
+
+    // Make sure the type is the same.
+    const auto node_props = get_node_props(r, e);
+    if (!node_props) {
+        return std::unexpected(node_props.error());
+    }
+
+    const auto old_type = node_props.value().get().type;
+    if (old_type != validated.type) {
+        return std::unexpected("cannot replace a node by a node of a different type"sv);
+    }
+
+    // Update properties.
+    add_properties(r, e, validated, node);
+
+    return {};
 }
 
 expected<entity> add_relationship(registry& r, const json& relationship) {
@@ -902,7 +947,7 @@ expected<entity> add_relationship(registry& r, const json& relationship) {
     return e;
 }
 
-expected<entity> add_relationship(registry& r, entity e, const json& relationship) {
+expected<void> add_relationship(registry& r, entity e, const json& relationship) {
     // Validate against schema.
     const auto validated_chk = check_relationship_schema(r, relationship);
     if (!validated_chk) {
@@ -917,7 +962,7 @@ expected<entity> add_relationship(registry& r, entity e, const json& relationshi
     auto enew = r.create(e);
     if (enew != e) {
         r.destroy(enew);
-        return std::unexpected("relationship ID already in use");
+        return std::unexpected("relationship ID already in use"sv);
     }
 
     try {
@@ -931,7 +976,36 @@ expected<entity> add_relationship(registry& r, entity e, const json& relationshi
         throw;
     }
 
-    return e;
+    return {};
+}
+
+expected<void> replace_relationship(registry& r, entity e, const json& relationship) {
+    // Validate against schema.
+    const auto validated_chk = check_relationship_schema(r, relationship);
+    if (!validated_chk) {
+        return std::unexpected(validated_chk.error());
+    }
+
+    const auto& validated = validated_chk.value();
+
+    // Make sure the type is the same.
+    const auto relationship_props_chk = get_relationship_props(r, e);
+    if (!relationship_props_chk) {
+        return std::unexpected(relationship_props_chk.error());
+    }
+
+    auto& relationship_props = relationship_props_chk.value().get();
+    if (relationship_props.type != validated.type) {
+        return std::unexpected(
+            "cannot replace a relationship by a relationship of a different type"sv);
+    }
+
+    // Update source, target, and properties.
+    relationship_props.source = validated.source;
+    relationship_props.target = validated.target;
+    add_properties(r, e, validated, relationship);
+
+    return {};
 }
 
 expected<std::string_view> get_node_type(const registry& r, entity node) {
@@ -1005,6 +1079,27 @@ expected<json> get_relationship_properties(const registry& r, entity relationshi
     }
 
     return get_properties(r, relationship, relationship_schema_chk.value().get());
+}
+
+expected<json> get_node(const registry& r, entity node) {
+    const auto node_schema_chk = get_node_schema(r, node);
+    if (!node_schema_chk) {
+        return std::unexpected(node_schema_chk.error());
+    }
+
+    return dump_node(r, node_schema_chk.value().get(), node);
+}
+
+expected<json> get_relationship(const registry& r, entity relationship) {
+    const auto relationship_props_chk = get_relationship_props(r, relationship);
+    if (!relationship_props_chk) {
+        return std::unexpected(relationship_props_chk.error());
+    }
+
+    const auto& relationship_props  = relationship_props_chk.value().get();
+    const auto& relationship_schema = get_relationship_schema(r, relationship_props.type);
+
+    return dump_relationship(r, relationship_schema, relationship_props, relationship);
 }
 
 expected<json> get_node_relationships(const registry& r, entity node) {

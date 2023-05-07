@@ -25,10 +25,13 @@ This implementation includes the following:
  - Functions are available to add:
    - A new node
    - A new relationship
+ - Functions are available to replace (in full, but type must be preserved):
+   - An existing node
+   - An existing relationship
  - Functions are available to delete:
-   - A node (deletes all connected relationships)
-   - A relationship
- - No function is currently available to edit nodes and relationships (only through delete and add). There is nothing fundamental preventing this, just lack of time.
+   - An existing node (this also deletes all connected relationships)
+   - An existing relationship
+ - No function is currently available for partial edits of nodes and relationships (only replace, or delete + add). There is nothing fundamental preventing this, just lack of time.
  - There was a plan to implement a REST API on top of this using [Crow](https://github.com/CrowCpp/Crow), but this was not started.
  - There was also a plan to implement a generic query, similar to Cypher, but this is a huge job. Initially I wanted to build something different, that would be simpler (only one-liners) yet making certain basic queries more natural than Cypher (in particular, having a one-liner for "give me nodes of type X that do NOT have a relationship Y with another node").
 

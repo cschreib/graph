@@ -79,13 +79,23 @@ R"({
     }
 })"_json;
 
-const json test_node_requirement =
+const json test_node_requirement1 =
 R"({
     "type": "requirement",
     "properties": {
         "id": "Req.1",
         "title": "Nodes checked against schema",
         "description": "Nodes in the database are checked against a schema, to ensure integrity. Nodes that do not conform to the schema cannot be added to the database."
+    }
+})"_json;
+
+const json test_node_requirement2 =
+R"({
+    "type": "requirement",
+    "properties": {
+        "id": "Req.2",
+        "title": "Relationships checked against schema",
+        "description": "Relationships in the database are checked against a schema, to ensure integrity. Relationships that do not conform to the schema cannot be added to the database."
     }
 })"_json;
 
@@ -126,13 +136,23 @@ R"({
     "target": "1"
 })"_json;
 
-const json test_relationship_needs =
+const json test_relationship_needs1 =
 R"({
     "type": "needs",
     "source": "2",
     "target": "0",
     "properties": {
         "priority": "MUST"
+    }
+})"_json;
+
+const json test_relationship_needs2 =
+R"({
+    "type": "needs",
+    "source": "3",
+    "target": "7",
+    "properties": {
+        "priority": "SHOULD"
     }
 })"_json;
 // clang-format on
@@ -153,7 +173,7 @@ TEST_CASE("add_node good") {
     registry r;
     graph::load_schema(r, test_schema);
 
-    const auto node_ret = graph::add_node(r, test_node_requirement);
+    const auto node_ret = graph::add_node(r, test_node_requirement1);
     REQUIRE_VALID(node_ret);
     const auto node = node_ret.value();
 
@@ -241,7 +261,7 @@ TEST_CASE("add_node bad") {
 
 namespace {
 void add_test_nodes(registry& r) {
-    auto n1 = graph::add_node(r, test_node_requirement);
+    auto n1 = graph::add_node(r, test_node_requirement1);
     REQUIRE_VALID(n1);
     REQUIRE(static_cast<std::uint64_t>(n1.value()) == 0);
     auto n2 = graph::add_node(r, test_node_risk);
@@ -291,7 +311,7 @@ TEST_CASE("add_relationship good") {
     }
 
     SECTION("with properties") {
-        const auto relationship_ret = graph::add_relationship(r, test_relationship_needs);
+        const auto relationship_ret = graph::add_relationship(r, test_relationship_needs1);
         REQUIRE_VALID(relationship_ret);
         const auto relationship = relationship_ret.value();
 
@@ -452,7 +472,7 @@ void add_test_relationships(registry& r) {
     auto e2 = graph::add_relationship(r, test_relationship_mitigates);
     REQUIRE_VALID(e2);
     REQUIRE(static_cast<std::uint64_t>(e2.value()) == 5);
-    auto e3 = graph::add_relationship(r, test_relationship_needs);
+    auto e3 = graph::add_relationship(r, test_relationship_needs1);
     REQUIRE_VALID(e3);
     REQUIRE(static_cast<std::uint64_t>(e3.value()) == 6);
 }
@@ -602,7 +622,7 @@ TEST_CASE("get nodes") {
         auto res = graph::get_nodes(r, "requirement"sv);
         REQUIRE_VALID(res);
         REQUIRE(res.value().contains("0"sv));
-        CHECK(res.value()["0"sv] == test_node_requirement);
+        CHECK(res.value()["0"sv] == test_node_requirement1);
     }
 
     SECTION("multiple nodes") {
@@ -624,7 +644,7 @@ TEST_CASE("get relationships") {
         auto res = graph::get_relationships(r, "needs"sv);
         REQUIRE_VALID(res);
         REQUIRE(res.value().contains("6"sv));
-        CHECK(res.value()["6"sv] == test_relationship_needs);
+        CHECK(res.value()["6"sv] == test_relationship_needs1);
     }
 
     SECTION("multiple relationships") {
@@ -634,5 +654,51 @@ TEST_CASE("get relationships") {
         REQUIRE(res.value().contains("5"sv));
         CHECK(res.value()["4"sv] == test_relationship_mitigates);
         CHECK(res.value()["5"sv] == test_relationship_mitigates);
+    }
+}
+
+TEST_CASE("replace node") {
+    registry r;
+    graph::load_schema(r, test_schema);
+    add_test_relationships(r);
+
+    SECTION("good") {
+        auto res = graph::replace_node(r, static_cast<entity>(2), test_node_customer2);
+        REQUIRE_VALID(res);
+        CHECK(graph::get_node(r, static_cast<entity>(2)).value() == test_node_customer2);
+    }
+
+    SECTION("wrong type") {
+        auto res = graph::replace_node(r, static_cast<entity>(0), test_node_customer2);
+        REQUIRE_INVALID(res, "cannot replace a node by a node of a different type"sv);
+    }
+}
+
+TEST_CASE("replace relationship") {
+    registry r;
+    graph::load_schema(r, test_schema);
+    add_test_relationships(r);
+
+    SECTION("good") {
+        auto n5 = graph::add_node(r, test_node_requirement2);
+        REQUIRE_VALID(n5);
+        REQUIRE(static_cast<std::uint64_t>(n5.value()) == 7);
+
+        auto res = graph::replace_relationship(r, static_cast<entity>(6), test_relationship_needs2);
+        REQUIRE_VALID(res);
+        CHECK(
+            graph::get_relationship(r, static_cast<entity>(6)).value() == test_relationship_needs2);
+    }
+
+    SECTION("bad source/target") {
+        auto res = graph::replace_relationship(r, static_cast<entity>(6), test_relationship_needs2);
+        REQUIRE_INVALID(res, "target does not exist");
+    }
+
+    SECTION("wrong type") {
+        auto res =
+            graph::replace_relationship(r, static_cast<entity>(6), test_relationship_mitigates);
+        REQUIRE_INVALID(
+            res, "cannot replace a relationship by a relationship of a different type"sv);
     }
 }

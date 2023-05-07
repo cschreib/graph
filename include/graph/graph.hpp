@@ -29,11 +29,15 @@ json           dump(const registry& r);
 
 expected<entity> add_node(registry& r, const json& node);
 
-expected<entity> add_node(registry& r, entity e, const json& node);
+expected<void> add_node(registry& r, entity e, const json& node);
+
+expected<void> replace_node(registry& r, entity e, const json& node);
 
 expected<entity> add_relationship(registry& r, const json& relationship);
 
-expected<entity> add_relationship(registry& r, entity e, const json& relationship);
+expected<void> add_relationship(registry& r, entity e, const json& relationship);
+
+expected<void> replace_relationship(registry& r, entity e, const json& relationship);
 
 expected<std::string_view> get_node_type(const registry& r, entity node);
 
@@ -51,6 +55,10 @@ get_relationship_property(const registry& r, entity relationship, std::string_vi
 expected<json> get_node_properties(const registry& r, entity node);
 
 expected<json> get_relationship_properties(const registry& r, entity node);
+
+expected<json> get_node(const registry& r, entity node);
+
+expected<json> get_relationship(const registry& r, entity relationship);
 
 expected<json> get_node_relationships(const registry& r, entity node);
 
