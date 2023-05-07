@@ -58,3 +58,15 @@ Note however that this applies only to the schema. The database itself does not 
  - the number of relationships for a given node
 
 Each property of a given type is encoded in a separate pool. E.g., if we have two types "T1" and "T2" each with properties "P1" and "P2", then "T1/P1", "T1/P2", "T2/P1", "T2/P2" are all stored in separate pools (even if the property shares the same name and type as a property of a different type). Pools are allocated for the data type specified in the schema, with no overhead except for strings. Strings can be stored on the heap, although we store small strings (smaller than 128 characters) in-place in the pool. Better performance could be obtained by adding new string types of fixed length (e.g., `"string64"` for a 64-character-long string), which are not allowed to migrate to the heap if too long.
+
+
+## Benchmarks
+
+The following was measured on a Ryzen 5 2600 on Linux on 07/05/2023 for commit 57ca37c355409385c5397118b6b25a9953ded271.
+
+An empty node (no properties) consumes about 50 bytes of RAM. A node with properties additionally consumes:
+ - 128 bytes per string property
+ - 8 bytes per float or integer
+ - 1 byte per bool property
+
+Creating 10 million empty nodes takes 2 seconds and consumes 0.5 GB. Creating 10 million non-empty nodes (3 string properties, all strings smaller than 128 chars, plus 2 integer properties) takes 6 seconds and consumes 5.4 GB.
