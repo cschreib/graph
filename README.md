@@ -31,11 +31,16 @@ This implementation includes the following:
  - Functions are available to delete:
    - An existing node (this also deletes all connected relationships)
    - An existing relationship
+
+The public API is in [`include/graph/graph.hpp`](include/graph/graph.hpp).
+
+Not included:
+ - Multi-threading. Not used internally, and the API is not thread-safe.
+ - Encryption. The data is stored in plain binary format in RAM.
+ - Offloading part of the database to disk to reduce RAM usage. All data is stored in RAM. However, the entire database can be dumped to JSON and saved to disk for backups and persistence.
  - No function is currently available for partial edits of nodes and relationships (only replace, or delete + add). There is nothing fundamental preventing this, just lack of time.
  - There was a plan to implement a REST API on top of this using [Crow](https://github.com/CrowCpp/Crow), but this was not started.
  - There was also a plan to implement a generic query, similar to Cypher, but this is a huge job. Initially I wanted to build something different, that would be simpler (only one-liners) yet making certain basic queries more natural than Cypher (in particular, having a one-liner for "give me nodes of type X that do NOT have a relationship Y with another node").
-
-The public API is in [`include/graph/graph.hpp`](include/graph/graph.hpp).
 
 
 ## Implementation details
@@ -68,5 +73,6 @@ An empty node (no properties) consumes about 50 bytes of RAM. A node with proper
  - 128 bytes per string property
  - 8 bytes per float or integer
  - 1 byte per bool property
+ - an overhead of 16-20 bytes per property
 
 Creating 10 million empty nodes takes 2 seconds and consumes 0.5 GB. Creating 10 million non-empty nodes (3 string properties, all strings smaller than 128 chars, plus 2 integer properties) takes 6 seconds and consumes 5.4 GB.
