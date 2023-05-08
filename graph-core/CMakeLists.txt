@@ -1,6 +1,23 @@
 cmake_minimum_required(VERSION 3.18)
 
-project(graph-core LANGUAGES CXX VERSION 1.0.0)
+project(graph-core LANGUAGES CXX VERSION 0.1.0)
+
+# Maximum lengths.
+set(GRAPH_CORE_MAX_PROPERTIES                     16  CACHE STRING "Max number of property per node or relationship")
+set(GRAPH_CORE_MAX_SCHEMA_NODES                   32  CACHE STRING "Max number of unique node types")
+set(GRAPH_CORE_MAX_SCHEMA_RELATIONSHIPS           32  CACHE STRING "Max number of unique relationship types")
+set(GRAPH_CORE_MAX_STRING_ID_LENGTH               32  CACHE STRING "Max length of a node or relationship type name")
+set(GRAPH_CORE_MAX_INPLACE_STRING_PROPERTY_LENGTH 128 CACHE STRING "Max length of string property for inplace storage")
+
+if (GIT_COMMAND_SUCCESS EQUAL 0)
+    set(GRAPH_CORE_FULL_VERSION "${PROJECT_VERSION}.${GIT_COMMIT_HASH}")
+else()
+    set(GRAPH_CORE_FULL_VERSION "${PROJECT_VERSION}")
+endif()
+
+# Create configure file to store CMake build parameter
+configure_file("${PROJECT_SOURCE_DIR}/include/graph/graph_core_config.hpp.config"
+               "${PROJECT_BINARY_DIR}/graph/graph_core_config.hpp")
 
 include(FetchContent)
 

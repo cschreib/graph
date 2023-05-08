@@ -1,4 +1,5 @@
 #include "graph/graph_core.hpp"
+
 #include "graph/graph_string.hpp"
 #include "graph/graph_vector.hpp"
 
@@ -9,11 +10,12 @@ using namespace entt::literals;
 using namespace std::literals;
 
 namespace {
-constexpr std::size_t max_properties                      = 16;
-constexpr std::size_t max_schema_nodes                    = 32;
-constexpr std::size_t max_schema_relationships            = 32;
-constexpr std::size_t max_string_id_length                = 32;
-constexpr std::size_t max_in_place_string_property_length = 128;
+constexpr std::size_t max_properties           = GRAPH_CORE_MAX_PROPERTIES;
+constexpr std::size_t max_schema_nodes         = GRAPH_CORE_MAX_SCHEMA_NODES;
+constexpr std::size_t max_schema_relationships = GRAPH_CORE_MAX_SCHEMA_RELATIONSHIPS;
+constexpr std::size_t max_string_id_length     = GRAPH_CORE_MAX_STRING_ID_LENGTH;
+constexpr std::size_t max_inplace_string_property_length =
+    GRAPH_CORE_MAX_INPLACE_STRING_PROPERTY_LENGTH;
 
 using graph::entity;
 using graph::expected;
@@ -59,11 +61,11 @@ struct hashed_string {
 };
 
 struct string_property {
-    std::variant<graph::small_string<max_in_place_string_property_length>, std::string> value;
+    std::variant<graph::small_string<max_inplace_string_property_length>, std::string> value;
 
     explicit string_property(std::string_view s) {
-        if (s.size() <= max_in_place_string_property_length) {
-            value.emplace<graph::small_string<max_in_place_string_property_length>>(s);
+        if (s.size() <= max_inplace_string_property_length) {
+            value.emplace<graph::small_string<max_inplace_string_property_length>>(s);
         } else {
             value.emplace<std::string>(s);
         }

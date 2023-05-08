@@ -55,7 +55,7 @@ For best data locality and fast access, the schema is encoded in binary format i
  - the max number of property per node/relationship (16)
  - the max length of a node/relationship type string (32)
 
-These default values can be changed in [`graph_core.cpp`](graph-core/src/graph_core.cpp).
+These default values can be changed at configure time with CMake, see [`CMakeLists.txt`](graph-core/CMakeLists.txt).
 
 Note however that this applies only to the schema. The database itself does not have similar restriction, in particular the following is only limited by the available RAM:
  - the number of nodes

@@ -1,6 +1,16 @@
 cmake_minimum_required(VERSION 3.18)
 
-project(graph-rest LANGUAGES CXX VERSION 1.0.0)
+project(graph-rest LANGUAGES CXX VERSION 0.1.0)
+
+if (GIT_COMMAND_SUCCESS EQUAL 0)
+    set(GRAPH_REST_FULL_VERSION "${PROJECT_VERSION}.${GIT_COMMIT_HASH}")
+else()
+    set(GRAPH_REST_FULL_VERSION "${PROJECT_VERSION}")
+endif()
+
+# Create configure file to store CMake build parameter
+configure_file("${PROJECT_SOURCE_DIR}/include/graph/graph_rest_config.hpp.config"
+               "${PROJECT_BINARY_DIR}/graph/graph_rest_config.hpp")
 
 include(FetchContent)
 

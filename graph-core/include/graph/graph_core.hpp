@@ -1,6 +1,7 @@
 #ifndef GRAPH_CORE_HPP
 #define GRAPH_CORE_HPP
 
+#include "graph/graph_core_config.hpp"
 #include "graph/graph_string.hpp"
 
 #include <entt/entity/registry.hpp>
