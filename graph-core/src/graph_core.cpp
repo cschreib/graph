@@ -1,5 +1,4 @@
-#include "graph/graph.hpp"
-
+#include "graph/graph_core.hpp"
 #include "graph/graph_string.hpp"
 #include "graph/graph_vector.hpp"
 

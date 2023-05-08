@@ -1,4 +1,4 @@
-#include "graph/graph.hpp"
+#include "graph/graph_core.hpp"
 
 #include <iostream>
 #include <snitch/snitch.hpp>

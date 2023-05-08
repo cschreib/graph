@@ -1,3 +1,6 @@
+#ifndef GRAPH_CORE_HPP
+#define GRAPH_CORE_HPP
+
 #include "graph/graph_string.hpp"
 
 #include <entt/entity/registry.hpp>
@@ -72,3 +75,5 @@ expected<void> delete_node(registry& r, entity node);
 
 expected<void> delete_relationship(registry& r, entity relationship);
 } // namespace graph
+
+#endif
